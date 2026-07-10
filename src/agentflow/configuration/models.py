@@ -20,6 +20,15 @@ class AutonomyConfig(BaseModel):
     push_allowed: bool = False
 
 
+class EfficiencyConfig(BaseModel):
+    prefer_minimal_context: bool = True
+    max_context_files: int = 12
+    max_context_file_bytes: int = 80_000
+    max_prompt_chars: int = 24_000
+    require_diff_scoped_repair_context: bool = True
+    summarize_large_logs: bool = True
+
+
 class ProjectConfig(BaseModel):
     project_id: str
     repository_root: Path
@@ -30,6 +39,7 @@ class ProjectConfig(BaseModel):
     forbidden_paths: list[str] = Field(default_factory=list)
     validation_commands: list[list[str]] = Field(default_factory=list)
     autonomy: AutonomyConfig = Field(default_factory=AutonomyConfig)
+    efficiency: EfficiencyConfig = Field(default_factory=EfficiencyConfig)
 
 
 class ResolvedConfig(BaseModel):

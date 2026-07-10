@@ -8,6 +8,7 @@ from rich.console import Console
 from rich.table import Table
 
 from agentflow import __version__
+from agentflow.application.configuration_resolution import ConfigurationResolutionService
 from agentflow.application.project_init import ProjectInitService
 from agentflow.application.project_inspection import ProjectInspectionService
 from agentflow.domain.init import InitApplyResult, InitProposal
@@ -31,6 +32,10 @@ def _project_inspection_service() -> ProjectInspectionService:
 
 def _project_init_service() -> ProjectInitService:
     return ProjectInitService(FilesystemRepositoryDiscovery())
+
+
+def _configuration_resolution_service() -> ConfigurationResolutionService:
+    return ConfigurationResolutionService(FilesystemRepositoryDiscovery())
 
 
 def _print_json(payload: object) -> None:
@@ -94,6 +99,39 @@ def _print_init_apply_result(result: InitApplyResult) -> None:
     table.add_row("Written", ", ".join(result.written_files) or "none")
     table.add_row("Unchanged", ", ".join(result.unchanged_files) or "none")
     table.add_row("Conflicts", ", ".join(result.conflict_files) or "none")
+    console.print(table)
+
+
+def _print_resolved_config(settings: dict[str, object]) -> None:
+    table = Table(title="AgentFlow resolved configuration")
+    table.add_column("Setting")
+    table.add_column("Value")
+    table.add_column("Origin")
+    for key, setting in settings.items():
+        value = getattr(setting, "value")
+        origin = getattr(setting, "origin")
+        table.add_row(key, json.dumps(value), origin)
+    console.print(table)
+
+
+def _print_project_config(project_config: dict[str, object]) -> None:
+    table = Table(title="AgentFlow project configuration")
+    table.add_column("Setting")
+    table.add_column("Value")
+
+    def flatten(values: dict[str, object], prefix: tuple[str, ...] = ()) -> list[tuple[str, object]]:
+        rows: list[tuple[str, object]] = []
+        for key, value in values.items():
+            dotted = prefix + (key,)
+            if isinstance(value, dict):
+                rows.extend(flatten(value, dotted))
+            else:
+                rows.append((".".join(dotted), value))
+        return rows
+
+    for key, value in flatten(project_config):
+        table.add_row(key, json.dumps(value))
+
     console.print(table)
 
 
@@ -179,15 +217,37 @@ def project_inspect(
 
 
 @config_app.command("show")
-def config_show(resolved: bool = False) -> None:
-    """Print a configuration display stub."""
-    console.print(
-        {
-            "status": "stub",
-            "resolved": resolved,
-            "message": "Configuration resolution is planned for slice 3.",
-        }
-    )
+def config_show(
+    path: Path = typer.Argument(Path.cwd(), help="Path to inspect."),
+    resolved: bool = typer.Option(False, "--resolved", help="Show the resolved configuration with origins."),
+    task_id: str | None = typer.Option(None, "--task-id", help="Apply task-level overrides for the specified task."),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON output."),
+) -> None:
+    """Show project or resolved configuration."""
+    service = _configuration_resolution_service()
+
+    try:
+        if resolved:
+            resolved_config = service.resolve(path, task_id=task_id)
+            payload = resolved_config.model_dump(mode="json")
+            if as_json:
+                _print_json(payload)
+            else:
+                _print_resolved_config(resolved_config.settings)
+            return
+
+        project_config = service.show_project(path)
+        if as_json:
+            _print_json(project_config)
+        else:
+            _print_project_config(project_config)
+    except ValueError as error:
+        payload = {"status": "error", "message": str(error)}
+        if as_json:
+            _print_json(payload)
+        else:
+            console.print(payload)
+        raise typer.Exit(1) from error
 
 
 @task_app.command("create")

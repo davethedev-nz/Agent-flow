@@ -14,3 +14,10 @@ autonomy:
   maximum_repair_iterations: 4
   commit_requires_approval: true
   push_allowed: false
+efficiency:
+  prefer_minimal_context: true
+  max_context_files: 12
+  max_context_file_bytes: 80000
+  max_prompt_chars: 24000
+  require_diff_scoped_repair_context: true
+  summarize_large_logs: true

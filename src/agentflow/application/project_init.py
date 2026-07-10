@@ -177,6 +177,14 @@ class ProjectInitService:
                 "commit_requires_approval": True,
                 "push_allowed": False,
             },
+            "efficiency": {
+                "prefer_minimal_context": True,
+                "max_context_files": 12,
+                "max_context_file_bytes": 80000,
+                "max_prompt_chars": 24000,
+                "require_diff_scoped_repair_context": True,
+                "summarize_large_logs": True,
+            },
         }
 
         validators = []
@@ -205,6 +213,7 @@ class ProjectInitService:
                 "- Keep changes scoped to approved task intent.\n"
                 "- Preserve deterministic validation before reviewer analysis.\n"
                 "- Keep orchestration logic separate from presentation surfaces.\n"
+                "- Prefer the smallest context and prompt needed to complete the current step.\n"
             ),
             ".agentflow/validation.yaml": yaml.safe_dump(
                 {"schema_version": 1, "validators": validators},

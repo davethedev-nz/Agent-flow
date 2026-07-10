@@ -53,6 +53,13 @@ autonomy:
   maximum_repair_iterations: 4
   commit_requires_approval: true
   push_allowed: false
+efficiency:
+  prefer_minimal_context: true
+  max_context_files: 12
+  max_context_file_bytes: 80000
+  max_prompt_chars: 24000
+  require_diff_scoped_repair_context: true
+  summarize_large_logs: true
 providers:
   planner: builtin-text-adapter
   implementer: builtin-text-adapter
@@ -89,3 +96,15 @@ Built-in profiles help `agentflow init` propose defaults:
 - `monorepo-mixed`
 
 Profiles are templates, not hidden magic. The generated config remains explicit and editable.
+
+## Efficiency defaults
+
+AgentFlow should minimize token use by default instead of relying on ad hoc prompt discipline.
+
+- prefer narrow context packs over broad repository dumps
+- cap the number and size of selected context files
+- cap prompt size before dispatching to an agent
+- restrict repair iterations to unresolved findings and relevant diff slices
+- summarize large validator logs before including them in prompts
+
+These settings belong in configuration so projects can tighten or relax them explicitly.
