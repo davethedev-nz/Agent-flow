@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 from tempfile import NamedTemporaryFile
+import json
 
 import yaml
 
@@ -31,7 +32,9 @@ class TaskRecordService:
         state = TaskStateSnapshot(
             task_id=task_id,
             current_state=task.current_state,
+            previous_state=None,
             updated_at=task.created_at,
+            transition_reason=None,
         )
 
         created_files = [
@@ -68,11 +71,32 @@ class TaskRecordService:
         return summaries
 
     def show(self, path: Path, task_id: str) -> TaskRecord:
-        repository_root = self._repository_root(path)
-        task_file = self._tasks_root(repository_root) / task_id / "task.yaml"
+        task_file = self.task_root(path, task_id) / "task.yaml"
         if not task_file.exists():
             raise ValueError(f"Task {task_id} was not found.")
         return self._load_task(task_file)
+
+    def load_state(self, path: Path, task_id: str) -> TaskStateSnapshot:
+        state_file = self.task_root(path, task_id) / "state.json"
+        if not state_file.exists():
+            raise ValueError(f"State snapshot for task {task_id} was not found.")
+        loaded = json.loads(state_file.read_text(encoding="utf-8"))
+        if not isinstance(loaded, dict):
+            raise ValueError(f"State snapshot {state_file} must contain an object.")
+        return TaskStateSnapshot.model_validate(loaded)
+
+    def task_root(self, path: Path, task_id: str) -> Path:
+        repository_root = self._repository_root(path)
+        task_root = self._tasks_root(repository_root) / task_id
+        if not task_root.exists():
+            raise ValueError(f"Task {task_id} was not found.")
+        return task_root
+
+    def write_task_record(self, task_file: Path, task: TaskRecord) -> None:
+        self._write(task_file, yaml.safe_dump(task.model_dump(mode="json"), sort_keys=False))
+
+    def write_state_snapshot(self, state_file: Path, state: TaskStateSnapshot) -> None:
+        self._write(state_file, self._json_dump(state.model_dump(mode="json")))
 
     def _repository_root(self, path: Path) -> Path:
         inspection = self._discovery.inspect(path)
@@ -101,6 +125,4 @@ class TaskRecordService:
         return target_path.name
 
     def _json_dump(self, payload: object) -> str:
-        import json
-
         return json.dumps(payload, indent=2) + "\n"

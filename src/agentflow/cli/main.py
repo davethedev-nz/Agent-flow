@@ -11,10 +11,12 @@ from agentflow import __version__
 from agentflow.application.configuration_resolution import ConfigurationResolutionService
 from agentflow.application.project_init import ProjectInitService
 from agentflow.application.project_inspection import ProjectInspectionService
+from agentflow.application.state_transitions import TaskTransitionService
 from agentflow.application.task_records import TaskRecordService
+from agentflow.domain.enums import TaskState
 from agentflow.domain.init import InitApplyResult, InitProposal
 from agentflow.domain.project import DoctorReport, ProjectInspection
-from agentflow.domain.task_records import TaskCreateResult, TaskRecord, TaskRecordSummary
+from agentflow.domain.task_records import TaskCreateResult, TaskRecord, TaskRecordSummary, TaskStatusResult, TaskTransitionResult
 from agentflow.infrastructure.repository_discovery import FilesystemRepositoryDiscovery
 
 app = typer.Typer(help="AgentFlow CLI")
@@ -42,6 +44,10 @@ def _configuration_resolution_service() -> ConfigurationResolutionService:
 
 def _task_record_service() -> TaskRecordService:
     return TaskRecordService(FilesystemRepositoryDiscovery())
+
+
+def _task_transition_service() -> TaskTransitionService:
+    return TaskTransitionService(FilesystemRepositoryDiscovery())
 
 
 def _print_json(payload: object) -> None:
@@ -171,6 +177,30 @@ def _print_task_show(task: TaskRecord) -> None:
     table.add_row("State", task.current_state)
     table.add_row("Repository root", str(task.repository_root))
     table.add_row("Created at", task.created_at)
+    console.print(table)
+
+
+def _print_task_status(status: TaskStatusResult) -> None:
+    table = Table(title=f"AgentFlow task status {status.task_id}")
+    table.add_column("Field")
+    table.add_column("Value")
+    table.add_row("Title", status.title)
+    table.add_row("Current state", status.current_state.value)
+    table.add_row("Previous state", status.previous_state.value if status.previous_state else "none")
+    table.add_row("Updated at", status.updated_at)
+    table.add_row("Transition reason", status.transition_reason or "none")
+    table.add_row("Allowed transitions", ", ".join(item.value for item in status.allowed_transitions) or "none")
+    console.print(table)
+
+
+def _print_task_transition(result: TaskTransitionResult) -> None:
+    table = Table(title=f"AgentFlow task transition {result.task_id}")
+    table.add_column("Field")
+    table.add_column("Value")
+    table.add_row("Previous state", result.previous_state.value)
+    table.add_row("Current state", result.current_state.value)
+    table.add_row("Updated at", result.updated_at)
+    table.add_row("Transition reason", result.transition_reason or "none")
     console.print(table)
 
 
@@ -353,6 +383,89 @@ def task_show(
         else:
             console.print(payload)
         raise typer.Exit(1) from error
+
+
+@task_app.command("status")
+def task_status(
+    task_id: str,
+    path: Path = typer.Argument(Path.cwd(), help="Path to inspect."),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON output."),
+) -> None:
+    """Show the persisted task state and allowed transitions."""
+    try:
+        status = _task_transition_service().status(path, task_id)
+        if as_json:
+            _print_json(status.model_dump(mode="json"))
+        else:
+            _print_task_status(status)
+    except ValueError as error:
+        payload = {"status": "error", "message": str(error)}
+        if as_json:
+            _print_json(payload)
+        else:
+            console.print(payload)
+        raise typer.Exit(1) from error
+
+
+def _transition_task(path: Path, task_id: str, target_state: TaskState, reason: str | None, as_json: bool) -> None:
+    try:
+        result = _task_transition_service().transition(path, task_id, target_state, reason=reason)
+        if as_json:
+            _print_json(result.model_dump(mode="json"))
+        else:
+            _print_task_transition(result)
+    except ValueError as error:
+        payload = {"status": "error", "message": str(error)}
+        if as_json:
+            _print_json(payload)
+        else:
+            console.print(payload)
+        raise typer.Exit(1) from error
+
+
+@app.command("approve-plan")
+def approve_plan(
+    task_id: str,
+    path: Path = typer.Argument(Path.cwd(), help="Path to inspect."),
+    reason: str | None = typer.Option(None, "--reason", help="Optional transition reason."),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON output."),
+) -> None:
+    """Transition a task from plan_review to implementing."""
+    _transition_task(path, task_id, TaskState.IMPLEMENTING, reason, as_json)
+
+
+@app.command("reject-plan")
+def reject_plan(
+    task_id: str,
+    path: Path = typer.Argument(Path.cwd(), help="Path to inspect."),
+    reason: str | None = typer.Option(None, "--reason", help="Optional transition reason."),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON output."),
+) -> None:
+    """Transition a task from plan_review back to planning."""
+    _transition_task(path, task_id, TaskState.PLANNING, reason, as_json)
+
+
+@app.command("block")
+def block_task(
+    task_id: str,
+    path: Path = typer.Argument(Path.cwd(), help="Path to inspect."),
+    reason: str | None = typer.Option(None, "--reason", help="Optional transition reason."),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON output."),
+) -> None:
+    """Transition a task into blocked state when allowed."""
+    _transition_task(path, task_id, TaskState.BLOCKED, reason, as_json)
+
+
+@app.command("resume")
+def resume_task(
+    task_id: str,
+    to: TaskState = typer.Option(..., "--to", help="State to resume into."),
+    path: Path = typer.Argument(Path.cwd(), help="Path to inspect."),
+    reason: str | None = typer.Option(None, "--reason", help="Optional transition reason."),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON output."),
+) -> None:
+    """Resume a blocked task into an allowed target state."""
+    _transition_task(path, task_id, to, reason, as_json)
 
 
 if __name__ == "__main__":
