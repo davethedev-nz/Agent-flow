@@ -5,6 +5,7 @@ from pathlib import Path
 
 from agentflow.domain.enums import TaskState
 from agentflow.domain.task_records import TaskRecord, TaskStateSnapshot, TaskStatusResult, TaskTransitionResult
+from agentflow.infrastructure.git_worktrees import GitWorktreeService
 from agentflow.infrastructure.repository_discovery import FilesystemRepositoryDiscovery
 from agentflow.application.task_records import TaskRecordService
 from agentflow.application.task_events import TaskEventService
@@ -30,9 +31,11 @@ class TaskTransitionService:
     def __init__(self, discovery: FilesystemRepositoryDiscovery) -> None:
         self._records = TaskRecordService(discovery)
         self._events = TaskEventService(discovery)
+        self._worktrees = GitWorktreeService(discovery)
 
     def status(self, path: Path, task_id: str) -> TaskStatusResult:
         task, state = self._load(path, task_id)
+        worktree = self._records.load_worktree(path, task_id)
         return TaskStatusResult(
             task_id=task.task_id,
             title=task.title,
@@ -41,6 +44,7 @@ class TaskTransitionService:
             updated_at=state.updated_at,
             transition_reason=state.transition_reason,
             allowed_transitions=sorted(self._allowed[state.current_state], key=lambda item: item.value),
+            worktree_path=worktree.path if worktree else None,
         )
 
     def transition(
@@ -50,6 +54,7 @@ class TaskTransitionService:
         target_state: TaskState,
         reason: str | None = None,
         event_type: str = "task_state_changed",
+        ensure_worktree: bool = False,
     ) -> TaskTransitionResult:
         task, state = self._load(path, task_id)
         previous_state = state.current_state
@@ -66,6 +71,8 @@ class TaskTransitionService:
         task_root = self._records.task_root(path, task_id)
         self._records.write_task_record(task_root / "task.yaml", task)
         self._records.write_state_snapshot(task_root / "state.json", state)
+        if ensure_worktree:
+            self._worktrees.ensure_task_worktree(path, task_id)
         self._events.append(
             path,
             task_id,

@@ -206,6 +206,7 @@ def _print_task_status(status: TaskStatusResult) -> None:
     table.add_row("Previous state", status.previous_state.value if status.previous_state else "none")
     table.add_row("Updated at", status.updated_at)
     table.add_row("Transition reason", status.transition_reason or "none")
+    table.add_row("Worktree", status.worktree_path or "none")
     table.add_row("Allowed transitions", ", ".join(item.value for item in status.allowed_transitions) or "none")
     console.print(table)
 
@@ -454,9 +455,17 @@ def _transition_task(
     reason: str | None,
     as_json: bool,
     event_type: str = "task_state_changed",
+    ensure_worktree: bool = False,
 ) -> None:
     try:
-        result = _task_transition_service().transition(path, task_id, target_state, reason=reason, event_type=event_type)
+        result = _task_transition_service().transition(
+            path,
+            task_id,
+            target_state,
+            reason=reason,
+            event_type=event_type,
+            ensure_worktree=ensure_worktree,
+        )
         if as_json:
             _print_json(result.model_dump(mode="json"))
         else:
@@ -487,7 +496,7 @@ def approve_plan(
         else:
             console.print(payload)
         raise typer.Exit(1) from error
-    _transition_task(path, task_id, TaskState.IMPLEMENTING, reason, as_json, event_type="plan_approved")
+    _transition_task(path, task_id, TaskState.IMPLEMENTING, reason, as_json, event_type="plan_approved", ensure_worktree=True)
 
 
 @app.command("reject-plan")

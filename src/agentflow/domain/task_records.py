@@ -44,6 +44,7 @@ class TaskStatusResult(BaseModel):
     updated_at: str
     transition_reason: str | None = None
     allowed_transitions: list[TaskState] = Field(default_factory=list)
+    worktree_path: str | None = None
 
 
 class TaskTransitionResult(BaseModel):

@@ -9,6 +9,7 @@ import yaml
 
 from agentflow.application.task_events import TaskEventService
 from agentflow.domain.task_records import TaskCreateResult, TaskRecord, TaskRecordSummary, TaskStateSnapshot
+from agentflow.domain.worktrees import WorktreeRecord
 from agentflow.infrastructure.repository_discovery import FilesystemRepositoryDiscovery
 
 
@@ -112,6 +113,15 @@ class TaskRecordService:
 
     def write_text(self, target_path: Path, content: str) -> None:
         self._write(target_path, content)
+
+    def load_worktree(self, path: Path, task_id: str) -> WorktreeRecord | None:
+        worktree_file = self.task_root(path, task_id) / "worktree.json"
+        if not worktree_file.exists():
+            return None
+        loaded = json.loads(worktree_file.read_text(encoding="utf-8"))
+        if not isinstance(loaded, dict):
+            raise ValueError(f"Worktree metadata {worktree_file} must contain an object.")
+        return WorktreeRecord.model_validate(loaded)
 
     def _repository_root(self, path: Path) -> Path:
         inspection = self._discovery.inspect(path)

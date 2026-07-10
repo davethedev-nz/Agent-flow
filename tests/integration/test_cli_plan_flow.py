@@ -8,9 +8,27 @@ runner = CliRunner()
 
 
 def _create_initialized_task(repository_root: Path) -> None:
-    (repository_root / ".git").mkdir(parents=True)
+    import subprocess
+
+    repository_root.mkdir(parents=True)
+    for argv in (
+        ["git", "init", "-b", "main"],
+        ["git", "config", "user.email", "test@example.com"],
+        ["git", "config", "user.name", "Test User"],
+    ):
+        completed = subprocess.run(argv, cwd=repository_root, capture_output=True, text=True, check=False)
+        if completed.returncode != 0:
+            raise AssertionError(completed.stderr or completed.stdout)
     (repository_root / "src").mkdir()
     (repository_root / "pyproject.toml").write_text("[project]\nname = 'demo'\n", encoding="utf-8")
+    (repository_root / "README.md").write_text("demo\n", encoding="utf-8")
+    for argv in (
+        ["git", "add", "."],
+        ["git", "commit", "-m", "init"],
+    ):
+        completed = subprocess.run(argv, cwd=repository_root, capture_output=True, text=True, check=False)
+        if completed.returncode != 0:
+            raise AssertionError(completed.stderr or completed.stdout)
     assert runner.invoke(app, ["init", str(repository_root), "--write"]).exit_code == 0
     assert runner.invoke(app, ["task", "create", "TASK-001", str(repository_root), "--title", "Demo task"]).exit_code == 0
 
