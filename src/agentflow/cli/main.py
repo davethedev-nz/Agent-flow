@@ -8,6 +8,7 @@ from rich.console import Console
 from rich.table import Table
 
 from agentflow import __version__
+from agentflow.application.agent_execution import AgentExecutionService
 from agentflow.application.configuration_resolution import ConfigurationResolutionService
 from agentflow.application.project_init import ProjectInitService
 from agentflow.application.project_inspection import ProjectInspectionService
@@ -17,6 +18,7 @@ from agentflow.application.task_records import TaskRecordService
 from agentflow.domain.enums import TaskState
 from agentflow.domain.events import TaskEvent
 from agentflow.domain.init import InitApplyResult, InitProposal
+from agentflow.domain.enums import AgentRole
 from agentflow.domain.project import DoctorReport, ProjectInspection
 from agentflow.domain.task_records import TaskCreateResult, TaskRecord, TaskRecordSummary, TaskStatusResult, TaskTransitionResult
 from agentflow.infrastructure.repository_discovery import FilesystemRepositoryDiscovery
@@ -54,6 +56,10 @@ def _task_transition_service() -> TaskTransitionService:
 
 def _task_event_service() -> TaskEventService:
     return TaskEventService(FilesystemRepositoryDiscovery())
+
+
+def _agent_execution_service() -> AgentExecutionService:
+    return AgentExecutionService(FilesystemRepositoryDiscovery())
 
 
 def _print_json(payload: object) -> None:
@@ -226,6 +232,11 @@ def _print_task_events(events: list[TaskEvent], task_id: str) -> None:
             json.dumps(event.payload),
         )
     console.print(table)
+
+
+def _print_agent_result(result: object) -> None:
+    payload = getattr(result, "model_dump")(mode="json")
+    _print_json(payload)
 
 
 @app.callback()
@@ -512,6 +523,32 @@ def events(
             _print_json([event.model_dump(mode="json") for event in task_events])
         else:
             _print_task_events(task_events, task_id)
+    except ValueError as error:
+        payload = {"status": "error", "message": str(error)}
+        if as_json:
+            _print_json(payload)
+        else:
+            console.print(payload)
+        raise typer.Exit(1) from error
+
+
+@app.command("agent-run")
+def agent_run(
+    task_id: str,
+    role: AgentRole = typer.Option(..., "--role", help="Agent role to execute."),
+    prompt: str = typer.Option(..., "--prompt", help="Prompt body to send to the adapter."),
+    adapter: str = typer.Option("fake", "--adapter", help="Adapter to use: fake or subprocess-text."),
+    command: list[str] = typer.Option([], "--command", help="Command tokens for subprocess-text adapter."),
+    path: Path = typer.Argument(Path.cwd(), help="Path to inspect."),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON output."),
+) -> None:
+    """Execute a bounded agent run through a provider-neutral adapter."""
+    try:
+        result = _agent_execution_service().run(path, task_id, role, prompt, adapter, command or None)
+        if as_json:
+            _print_json(result.model_dump(mode="json"))
+        else:
+            _print_agent_result(result)
     except ValueError as error:
         payload = {"status": "error", "message": str(error)}
         if as_json:
