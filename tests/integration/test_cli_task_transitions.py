@@ -78,3 +78,21 @@ def test_block_and_resume_allow_guarded_recovery(tmp_path: Path) -> None:
     assert resume_result.exit_code == 0
     assert '"current_state": "planning"' in resume_result.stdout
     assert '"transition_reason": "Requirements clarified"' in resume_result.stdout
+
+
+def test_events_show_task_creation_and_resume_history(tmp_path: Path) -> None:
+    repository_root = tmp_path / "repo"
+    _create_initialized_task(repository_root)
+
+    block_result = runner.invoke(app, ["block", "TASK-001", str(repository_root), "--reason", "Need input"])
+    assert block_result.exit_code == 0
+    resume_result = runner.invoke(app, ["resume", "TASK-001", str(repository_root), "--to", "planning", "--reason", "Input received"])
+    assert resume_result.exit_code == 0
+
+    result = runner.invoke(app, ["events", "TASK-001", str(repository_root), "--json"])
+
+    assert result.exit_code == 0
+    assert '"event_type": "task_created"' in result.stdout
+    assert '"event_type": "task_blocked"' in result.stdout
+    assert '"event_type": "task_resumed"' in result.stdout
+    assert '"resulting_state": "planning"' in result.stdout

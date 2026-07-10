@@ -7,6 +7,7 @@ from agentflow.domain.enums import TaskState
 from agentflow.domain.task_records import TaskRecord, TaskStateSnapshot, TaskStatusResult, TaskTransitionResult
 from agentflow.infrastructure.repository_discovery import FilesystemRepositoryDiscovery
 from agentflow.application.task_records import TaskRecordService
+from agentflow.application.task_events import TaskEventService
 
 
 class TaskTransitionService:
@@ -28,6 +29,7 @@ class TaskTransitionService:
 
     def __init__(self, discovery: FilesystemRepositoryDiscovery) -> None:
         self._records = TaskRecordService(discovery)
+        self._events = TaskEventService(discovery)
 
     def status(self, path: Path, task_id: str) -> TaskStatusResult:
         task, state = self._load(path, task_id)
@@ -47,6 +49,7 @@ class TaskTransitionService:
         task_id: str,
         target_state: TaskState,
         reason: str | None = None,
+        event_type: str = "task_state_changed",
     ) -> TaskTransitionResult:
         task, state = self._load(path, task_id)
         previous_state = state.current_state
@@ -63,6 +66,14 @@ class TaskTransitionService:
         task_root = self._records.task_root(path, task_id)
         self._records.write_task_record(task_root / "task.yaml", task)
         self._records.write_state_snapshot(task_root / "state.json", state)
+        self._events.append(
+            path,
+            task_id,
+            event_type=event_type,
+            previous_state=previous_state.value,
+            resulting_state=target_state.value,
+            payload={"reason": reason} if reason else {},
+        )
 
         return TaskTransitionResult(
             task_id=task_id,

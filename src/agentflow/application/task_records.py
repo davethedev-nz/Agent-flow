@@ -7,6 +7,7 @@ import json
 
 import yaml
 
+from agentflow.application.task_events import TaskEventService
 from agentflow.domain.task_records import TaskCreateResult, TaskRecord, TaskRecordSummary, TaskStateSnapshot
 from agentflow.infrastructure.repository_discovery import FilesystemRepositoryDiscovery
 
@@ -14,6 +15,7 @@ from agentflow.infrastructure.repository_discovery import FilesystemRepositoryDi
 class TaskRecordService:
     def __init__(self, discovery: FilesystemRepositoryDiscovery) -> None:
         self._discovery = discovery
+        self._events = TaskEventService(discovery)
 
     def create(self, path: Path, task_id: str, title: str | None = None) -> TaskCreateResult:
         repository_root = self._repository_root(path)
@@ -47,6 +49,16 @@ class TaskRecordService:
             self._write(task_root / "plan.md", "# Plan\n\nPlan generation has not started yet.\n"),
             self._write(task_root / "state.json", self._json_dump(state.model_dump(mode="json"))),
         ]
+
+        self._events.append(
+            repository_root,
+            task_id,
+            event_type="task_created",
+            previous_state=None,
+            resulting_state=task.current_state.value,
+            payload={"title": task.title},
+        )
+        created_files.append("events.jsonl")
 
         return TaskCreateResult(task=task, created_files=created_files)
 

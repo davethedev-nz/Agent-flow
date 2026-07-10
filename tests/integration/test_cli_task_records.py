@@ -24,6 +24,7 @@ def test_task_create_writes_repository_local_files(tmp_path: Path) -> None:
     assert (repository_root / ".agentflow" / "tasks" / "TASK-001" / "acceptance-criteria.md").exists()
     assert (repository_root / ".agentflow" / "tasks" / "TASK-001" / "plan.md").exists()
     assert (repository_root / ".agentflow" / "tasks" / "TASK-001" / "state.json").exists()
+    assert (repository_root / ".agentflow" / "tasks" / "TASK-001" / "events.jsonl").exists()
 
 
 def test_task_list_and_show_return_created_task(tmp_path: Path) -> None:

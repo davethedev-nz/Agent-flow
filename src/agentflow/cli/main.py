@@ -12,8 +12,10 @@ from agentflow.application.configuration_resolution import ConfigurationResoluti
 from agentflow.application.project_init import ProjectInitService
 from agentflow.application.project_inspection import ProjectInspectionService
 from agentflow.application.state_transitions import TaskTransitionService
+from agentflow.application.task_events import TaskEventService
 from agentflow.application.task_records import TaskRecordService
 from agentflow.domain.enums import TaskState
+from agentflow.domain.events import TaskEvent
 from agentflow.domain.init import InitApplyResult, InitProposal
 from agentflow.domain.project import DoctorReport, ProjectInspection
 from agentflow.domain.task_records import TaskCreateResult, TaskRecord, TaskRecordSummary, TaskStatusResult, TaskTransitionResult
@@ -48,6 +50,10 @@ def _task_record_service() -> TaskRecordService:
 
 def _task_transition_service() -> TaskTransitionService:
     return TaskTransitionService(FilesystemRepositoryDiscovery())
+
+
+def _task_event_service() -> TaskEventService:
+    return TaskEventService(FilesystemRepositoryDiscovery())
 
 
 def _print_json(payload: object) -> None:
@@ -201,6 +207,24 @@ def _print_task_transition(result: TaskTransitionResult) -> None:
     table.add_row("Current state", result.current_state.value)
     table.add_row("Updated at", result.updated_at)
     table.add_row("Transition reason", result.transition_reason or "none")
+    console.print(table)
+
+
+def _print_task_events(events: list[TaskEvent], task_id: str) -> None:
+    table = Table(title=f"AgentFlow events {task_id}")
+    table.add_column("Timestamp")
+    table.add_column("Type")
+    table.add_column("From")
+    table.add_column("To")
+    table.add_column("Payload")
+    for event in events:
+        table.add_row(
+            event.timestamp,
+            event.event_type,
+            event.previous_state or "none",
+            event.resulting_state or "none",
+            json.dumps(event.payload),
+        )
     console.print(table)
 
 
@@ -407,9 +431,16 @@ def task_status(
         raise typer.Exit(1) from error
 
 
-def _transition_task(path: Path, task_id: str, target_state: TaskState, reason: str | None, as_json: bool) -> None:
+def _transition_task(
+    path: Path,
+    task_id: str,
+    target_state: TaskState,
+    reason: str | None,
+    as_json: bool,
+    event_type: str = "task_state_changed",
+) -> None:
     try:
-        result = _task_transition_service().transition(path, task_id, target_state, reason=reason)
+        result = _task_transition_service().transition(path, task_id, target_state, reason=reason, event_type=event_type)
         if as_json:
             _print_json(result.model_dump(mode="json"))
         else:
@@ -431,7 +462,7 @@ def approve_plan(
     as_json: bool = typer.Option(False, "--json", help="Emit JSON output."),
 ) -> None:
     """Transition a task from plan_review to implementing."""
-    _transition_task(path, task_id, TaskState.IMPLEMENTING, reason, as_json)
+    _transition_task(path, task_id, TaskState.IMPLEMENTING, reason, as_json, event_type="plan_approved")
 
 
 @app.command("reject-plan")
@@ -442,7 +473,7 @@ def reject_plan(
     as_json: bool = typer.Option(False, "--json", help="Emit JSON output."),
 ) -> None:
     """Transition a task from plan_review back to planning."""
-    _transition_task(path, task_id, TaskState.PLANNING, reason, as_json)
+    _transition_task(path, task_id, TaskState.PLANNING, reason, as_json, event_type="plan_rejected")
 
 
 @app.command("block")
@@ -453,7 +484,7 @@ def block_task(
     as_json: bool = typer.Option(False, "--json", help="Emit JSON output."),
 ) -> None:
     """Transition a task into blocked state when allowed."""
-    _transition_task(path, task_id, TaskState.BLOCKED, reason, as_json)
+    _transition_task(path, task_id, TaskState.BLOCKED, reason, as_json, event_type="task_blocked")
 
 
 @app.command("resume")
@@ -465,7 +496,29 @@ def resume_task(
     as_json: bool = typer.Option(False, "--json", help="Emit JSON output."),
 ) -> None:
     """Resume a blocked task into an allowed target state."""
-    _transition_task(path, task_id, to, reason, as_json)
+    _transition_task(path, task_id, to, reason, as_json, event_type="task_resumed")
+
+
+@app.command("events")
+def events(
+    task_id: str,
+    path: Path = typer.Argument(Path.cwd(), help="Path to inspect."),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON output."),
+) -> None:
+    """Show the append-only event log for a task."""
+    try:
+        task_events = _task_event_service().list_events(path, task_id)
+        if as_json:
+            _print_json([event.model_dump(mode="json") for event in task_events])
+        else:
+            _print_task_events(task_events, task_id)
+    except ValueError as error:
+        payload = {"status": "error", "message": str(error)}
+        if as_json:
+            _print_json(payload)
+        else:
+            console.print(payload)
+        raise typer.Exit(1) from error
 
 
 if __name__ == "__main__":
