@@ -9,6 +9,7 @@ from rich.table import Table
 
 from agentflow import __version__
 from agentflow.application.agent_execution import AgentExecutionService
+from agentflow.application.planning import PlanningService
 from agentflow.application.configuration_resolution import ConfigurationResolutionService
 from agentflow.application.project_init import ProjectInitService
 from agentflow.application.project_inspection import ProjectInspectionService
@@ -60,6 +61,10 @@ def _task_event_service() -> TaskEventService:
 
 def _agent_execution_service() -> AgentExecutionService:
     return AgentExecutionService(FilesystemRepositoryDiscovery())
+
+
+def _planning_service() -> PlanningService:
+    return PlanningService(FilesystemRepositoryDiscovery())
 
 
 def _print_json(payload: object) -> None:
@@ -473,6 +478,15 @@ def approve_plan(
     as_json: bool = typer.Option(False, "--json", help="Emit JSON output."),
 ) -> None:
     """Transition a task from plan_review to implementing."""
+    try:
+        _planning_service().record_plan_approval(path, task_id, reason=reason)
+    except ValueError as error:
+        payload = {"status": "error", "message": str(error)}
+        if as_json:
+            _print_json(payload)
+        else:
+            console.print(payload)
+        raise typer.Exit(1) from error
     _transition_task(path, task_id, TaskState.IMPLEMENTING, reason, as_json, event_type="plan_approved")
 
 
@@ -485,6 +499,31 @@ def reject_plan(
 ) -> None:
     """Transition a task from plan_review back to planning."""
     _transition_task(path, task_id, TaskState.PLANNING, reason, as_json, event_type="plan_rejected")
+
+
+@app.command("plan")
+def plan_task(
+    task_id: str,
+    path: Path = typer.Argument(Path.cwd(), help="Path to inspect."),
+    adapter: str = typer.Option("fake", "--adapter", help="Adapter to use for planning."),
+    command: list[str] = typer.Option([], "--command", help="Command tokens for subprocess-text planner adapter."),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON output."),
+) -> None:
+    """Generate a plan and move the task into plan review."""
+    try:
+        plan_markdown = _planning_service().generate_plan(path, task_id, adapter=adapter, command=command or None)
+        payload = {"task_id": task_id, "status": "plan_review", "plan_preview": plan_markdown[:400]}
+        if as_json:
+            _print_json(payload)
+        else:
+            console.print(payload)
+    except ValueError as error:
+        payload = {"status": "error", "message": str(error)}
+        if as_json:
+            _print_json(payload)
+        else:
+            console.print(payload)
+        raise typer.Exit(1) from error
 
 
 @app.command("block")

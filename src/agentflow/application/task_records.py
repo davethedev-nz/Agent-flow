@@ -110,6 +110,9 @@ class TaskRecordService:
     def write_state_snapshot(self, state_file: Path, state: TaskStateSnapshot) -> None:
         self._write(state_file, self._json_dump(state.model_dump(mode="json")))
 
+    def write_text(self, target_path: Path, content: str) -> None:
+        self._write(target_path, content)
+
     def _repository_root(self, path: Path) -> Path:
         inspection = self._discovery.inspect(path)
         if inspection.repository_root is None:
