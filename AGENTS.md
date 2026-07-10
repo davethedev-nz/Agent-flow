@@ -10,3 +10,4 @@ This repository contains the AgentFlow product itself: architecture documents, t
 - Prefer small, testable vertical slices.
 - Do not let adapters own task state transitions.
 - Preserve repository-local inspectability for task artifacts.
+- Implement features on feature branches and merge them through pull requests rather than committing feature work directly to main.

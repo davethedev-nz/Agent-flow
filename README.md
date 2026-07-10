@@ -53,7 +53,7 @@ The current code is intentionally thin. It defines package boundaries, interface
 
 Target stack:
 
-- Python 3.13+
+- Python 3.12+
 - Typer
 - Pydantic v2
 - Rich
