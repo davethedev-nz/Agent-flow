@@ -1,0 +1,1431 @@
+You are acting as a principal software architect and product designer.
+
+I am creating a new repository for a product currently called `AgentFlow`.
+
+AgentFlow is a local-first, controlled, inspectable, resumable AI software-development orchestration tool.
+
+It should allow a developer to define a software task, approve an implementation plan, delegate bounded work to coding agents, run deterministic validation, perform review and repair loops, inspect all activity from VS Code, and retain full human control over workflow state, Git operations, command execution, scope changes, and final integration.
+
+Your task is to inspect this repository and create a complete architecture, product design, implementation roadmap, and initial codebase scaffold.
+
+Do not implement the full product yet.
+
+## Core design philosophy
+
+The workflow engine owns the process.
+
+AI agents are replaceable workers behind controlled adapters. Agents must not own workflow state, decide arbitrary workflow transitions, push code, perform unapproved commits, alter acceptance criteria, or independently decide that a task is complete.
+
+The system must follow these principles:
+
+* Workflow state is persisted outside agent conversations.
+* Git provides evidence, isolation, history, and auditability.
+* Agents receive bounded and explicit context.
+* Agents have clearly defined roles, permissions, and output schemas.
+* Deterministic validation runs before AI review.
+* Human approval is required at meaningful boundaries.
+* The system must resume safely after interruption.
+* Model providers must be replaceable.
+* The orchestration logic must remain separate from the VS Code interface.
+* The first version must be small enough for one developer to build, understand, operate, and maintain.
+* Agent autonomy must be configurable rather than all-or-nothing.
+* The orchestration layer must verify restrictions rather than relying only on prompts.
+* The developer should remain close to the code and be able to inspect plans, diffs, test evidence, findings, and agent activity from the IDE.
+
+The core principle is:
+
+```text
+AgentFlow owns the workflow.
+Agents perform bounded jobs.
+Git owns the evidence.
+The developer approves important transitions.
+```
+
+## Product distribution and project integration model
+
+AgentFlow must be designed as a reusable, installable developer tool that operates across many unrelated software repositories.
+
+The AgentFlow source repository contains:
+
+* the orchestration engine
+* built-in prompts
+* default policies
+* reusable templates
+* provider adapters
+* Git and command execution services
+* product architecture documentation
+* tests for AgentFlow itself
+
+Target application repositories must not contain a copy of the AgentFlow source code or its internal product architecture documentation.
+
+The intended usage model is:
+
+```bash
+pipx install agentflow
+
+cd an-existing-project
+agentflow init
+```
+
+The `agentflow init` command should add only the project-facing configuration and state needed to use AgentFlow in that repository.
+
+A target repository may receive a lightweight structure similar to:
+
+```text
+.agentflow/
+├── config.yaml
+├── project-context.md
+├── architecture-rules.md
+├── validation.yaml
+├── policies/
+├── prompts/
+└── tasks/
+
+.vscode/
+└── tasks.json
+
+AGENTS.md
+```
+
+The exact structure must be justified. Avoid unnecessary generated files.
+
+The design must distinguish three layers.
+
+### 1. AgentFlow product
+
+The installed tool:
+
+* owns orchestration logic
+* owns built-in defaults
+* owns default prompt templates
+* owns workflow state-machine definitions
+* supports multiple target repositories
+* remains independent of any one target project
+
+### 2. Project integration
+
+Repository-specific configuration:
+
+* architecture guidance
+* coding conventions
+* validation commands
+* source, test, documentation, and infrastructure paths
+* allowed and forbidden paths
+* command policies
+* project-specific prompt overrides
+* VS Code task integration
+* project metadata
+
+### 3. Task records
+
+Per-task persisted data:
+
+* requirements
+* acceptance criteria
+* approved plan
+* workflow state
+* validation evidence
+* reviewer findings
+* event history
+* agent run history
+* approvals
+* completion record
+
+AgentFlow should support configuration inheritance in this order:
+
+```text
+built-in defaults
+    ↓
+user-level configuration
+    ↓
+project-level configuration
+    ↓
+task-level overrides
+```
+
+Later layers may override earlier layers, but the resolved configuration must be inspectable.
+
+Include a command similar to:
+
+```bash
+agentflow config show --resolved
+```
+
+It should display the effective configuration and identify the origin of each setting.
+
+Project-level prompts should override or extend built-in prompts. Projects should not be forced to copy all built-in prompt files.
+
+The product design should include commands similar to:
+
+```bash
+agentflow init
+agentflow init --profile django
+agentflow init --profile dotnet
+agentflow project inspect
+agentflow config show --resolved
+agentflow doctor
+```
+
+`agentflow init` should:
+
+* verify that the target directory is a Git repository
+* locate the repository root
+* inspect the project structure
+* detect likely languages and frameworks
+* propose validation commands
+* propose source, test, documentation, and infrastructure paths
+* propose forbidden paths
+* show proposed changes before writing files
+* avoid overwriting existing files without explicit approval
+* remain safe to run repeatedly
+* update `.gitignore` only when appropriate
+* optionally create VS Code tasks
+* optionally create an `AGENTS.md` file
+* never copy AgentFlow’s internal product documentation into the target repository
+
+The project model should support:
+
+* Python and Django projects
+* .NET projects
+* Node and TypeScript projects
+* Terraform and infrastructure repositories
+* mixed monorepos
+
+Explain how AgentFlow:
+
+* locates the project root
+* discovers its repository configuration
+* distinguishes different target repositories
+* prevents task state from leaking between projects
+* supports multiple repositories being operated on concurrently
+
+A future greenfield command may be considered:
+
+```bash
+agentflow new django-api customer-api
+```
+
+This is not part of the MVP.
+
+The MVP must focus on initialising and operating against existing Git repositories.
+
+## Intended user workflow
+
+A developer should be able to:
+
+1. Install AgentFlow independently.
+2. Run `agentflow init` inside an existing repository.
+3. Review the proposed project configuration.
+4. Create a task from a user story and acceptance criteria.
+5. Ask a planner agent to produce an implementation plan.
+6. Review and approve or reject that plan.
+7. Create a controlled Git worktree for implementation.
+8. Run an implementation agent with explicit scope and permissions.
+9. Restrict which paths the agent may edit.
+10. Restrict which shell commands the agent may run.
+11. Run formatting, linting, type checking, tests, security checks, and path-policy validation.
+12. Ask a read-only reviewer agent to compare the implementation against:
+
+    * the approved plan
+    * the acceptance criteria
+    * the Git diff
+    * validation evidence
+13. Return structured blocking findings to the implementation agent.
+14. Repeat the repair loop up to a configured limit.
+15. Escalate when progress stalls, scope expands, or a risky operation is requested.
+16. Optionally run a documentation agent after behaviour stabilises.
+17. Review the final diff and evidence.
+18. Approve the final local commit.
+19. Later add PR creation and CI integration.
+
+## Workflow state machine
+
+Design AgentFlow around an explicit state machine.
+
+Use states similar to:
+
+* `created`
+* `planning`
+* `plan_review`
+* `implementing`
+* `validating`
+* `repairing`
+* `code_review`
+* `documenting`
+* `final_review`
+* `ready_to_commit`
+* `complete`
+* `blocked`
+* `cancelled`
+
+Define:
+
+* valid transitions
+* invalid transitions
+* transitions triggered automatically
+* transitions requiring human approval
+* transition preconditions
+* persisted transition events
+* recovery behaviour after interruption
+* idempotency requirements
+
+Agents must never directly modify task state.
+
+Only the orchestration engine may transition state after validating the transition and recording an event.
+
+The developer must be able to inspect:
+
+* the current state
+* why the task entered that state
+* the previous state
+* the event that caused the transition
+* what actions are currently permitted
+* what approval is required next
+
+## Configurable autonomy
+
+The design should support task-level autonomy settings similar to:
+
+```yaml
+autonomy:
+  plan_requires_approval: true
+  code_edits_require_approval: false
+  scope_expansion_requires_approval: true
+  command_approval_mode: allowlist
+  maximum_repair_iterations: 4
+  commit_requires_approval: true
+  push_allowed: false
+```
+
+The product should support fewer but stronger human gates.
+
+Recommended human approval points:
+
+* plan approval
+* scope expansion
+* destructive or infrastructure commands
+* integration of specialist work
+* final commit
+* any future push or PR operation
+
+Do not require approval for every small edit by default.
+
+## Initial agent roles
+
+Design strict contracts for these roles.
+
+### Planner
+
+Responsibilities:
+
+* inspect the task requirements
+* inspect selected repository context
+* propose an implementation plan
+* identify affected modules and files
+* identify risks, assumptions, dependencies, and unknowns
+* map implementation steps to acceptance criteria
+* propose validation steps
+* identify likely documentation impact
+
+Restrictions:
+
+* no code edits
+* no commits
+* no workflow transitions
+* no acceptance-criteria changes
+* no shell commands beyond safe repository inspection where permitted
+
+Required structured output:
+
+* plan summary
+* proposed steps
+* affected areas
+* acceptance-criteria mapping
+* risks
+* assumptions
+* unresolved questions
+* proposed validation commands
+* proposed path scope
+
+### Implementer
+
+Responsibilities:
+
+* implement the approved plan
+* make the smallest complete change
+* respond to unresolved reviewer findings
+* run approved development commands
+* report assumptions, changes, and concerns
+
+Restrictions:
+
+* edit only allowed paths
+* run only allowed commands
+* no push
+* no unapproved commit
+* no acceptance-criteria changes
+* no unrelated refactoring
+* no silent scope expansion
+* no destructive infrastructure operations
+
+Required structured output:
+
+* summary
+* changed files
+* commands requested
+* commands run
+* assumptions
+* unresolved concerns
+* findings addressed
+* findings not addressed
+* suggested next state
+
+The suggested next state is advisory only. The orchestrator decides the transition.
+
+### Tester
+
+Responsibilities:
+
+* inspect acceptance criteria
+* inspect the implementation diff
+* identify missing behavioural coverage
+* add or improve tests within allowed paths
+* run approved validation commands
+* report untested conditions
+
+Restrictions:
+
+* should not repair production code
+* must not weaken assertions
+* must not remove failing tests merely to make validation pass
+* must not modify acceptance criteria
+* must not alter unrelated tests
+
+Required structured output:
+
+* tests added or changed
+* criteria covered
+* criteria not covered
+* commands run
+* failures
+* coverage concerns
+* recommendations
+
+### Reviewer
+
+Responsibilities:
+
+* perform read-only review
+* compare the diff against the approved plan
+* compare the diff against acceptance criteria
+* inspect deterministic validation evidence
+* identify correctness, security, maintainability, architectural, and scope issues
+* return structured findings
+
+Restrictions:
+
+* no file edits
+* no commits
+* no workflow transitions
+* no command execution unless explicitly configured for safe inspection
+
+Required verdicts:
+
+* `approved`
+* `rejected`
+* `blocked`
+
+### Documenter
+
+Responsibilities:
+
+* inspect the final implementation diff
+* inspect validation evidence
+* update relevant documentation after behaviour stabilises
+* identify missing or stale documentation
+
+Restrictions:
+
+* edit only documentation paths
+* no source-code changes unless explicitly approved
+* no speculative documentation based only on the original plan
+
+Required structured output:
+
+* documentation changed
+* documentation still required
+* public behaviour documented
+* deployment or configuration impact documented
+* unresolved documentation concerns
+
+## Agent adapter requirements
+
+The orchestration engine must support replaceable provider-neutral agent adapters.
+
+Initial adapters may invoke command-line tools such as:
+
+* Claude Code
+* GitHub Copilot CLI
+
+Do not tightly couple the workflow to either provider.
+
+Define a provider-neutral interface around concepts such as:
+
+* `AgentRequest`
+* `AgentResult`
+* `AgentAdapter`
+* `AgentCapabilities`
+* `AgentExecutionMetadata`
+
+An agent request should include:
+
+* task ID
+* role
+* prompt
+* working directory
+* repository root
+* allowed paths
+* forbidden paths
+* allowed commands
+* forbidden command patterns
+* context files
+* iteration number
+* timeout
+* maximum output size
+* expected output schema
+* environment restrictions
+* task-specific instructions
+
+An agent result should include:
+
+* success status
+* provider
+* model where available
+* role
+* summary
+* changed files
+* commands requested
+* commands run
+* findings
+* structured output
+* raw output location
+* exit code
+* start and finish times
+* duration
+* timeout status
+* usage metadata where available
+* cost metadata where available
+* validation of the returned schema
+
+The design must explain how AgentFlow handles:
+
+* providers that support structured output
+* providers that return only text
+* malformed output
+* partial output
+* interrupted processes
+* timeouts
+* model unavailability
+* authentication failures
+* provider-specific capabilities
+* provider-specific permission models
+
+## Context construction
+
+AgentFlow should control what context each agent receives.
+
+Do not rely on agents to independently read the entire repository.
+
+Design a context-builder component that may select:
+
+* task requirements
+* acceptance criteria
+* approved plan
+* repository guidance
+* `AGENTS.md`
+* architecture rules
+* coding standards
+* explicit files named by the plan
+* relevant source files
+* related tests
+* current diff
+* validation results
+* unresolved findings
+* recent task events
+
+The first version should use transparent, deterministic context selection.
+
+Possible initial techniques:
+
+* explicit paths
+* configured path scopes
+* Git diff
+* imports and references
+* `ripgrep`
+* neighbouring tests
+* repository manifests
+* task-specific file lists
+
+Do not include embeddings or semantic indexing in the MVP.
+
+The developer should be able to inspect the exact context pack supplied to each agent.
+
+## Git and worktree requirements
+
+The system should use Git worktrees for isolation.
+
+Design an MVP approach where:
+
+* every task has an integration branch
+* the first version uses one implementation worktree
+* later specialist agents may receive separate worktrees
+* the orchestrator creates, inspects, and removes worktrees
+* agents cannot push directly
+* agents cannot run destructive Git commands
+* approved commits can be applied to the integration branch
+* dirty worktrees are detected
+* detached or invalid worktree state is detected
+* out-of-scope file changes are detected
+* all Git actions are logged
+* failed Git operations are recoverable
+* the task can resume after the orchestration process stops
+
+Use one integration branch similar to:
+
+```text
+task/TASK-123
+```
+
+Future specialist branches may use:
+
+```text
+task/TASK-123-implementation
+task/TASK-123-tests
+task/TASK-123-docs
+```
+
+The orchestrator should remain the integration owner.
+
+Do not allow arbitrary agents to merge or cherry-pick changes themselves.
+
+The design should explain when AgentFlow should:
+
+* create a branch
+* create a worktree
+* make a checkpoint commit
+* create a final commit
+* cherry-pick specialist work
+* restore after failure
+* clean up abandoned worktrees
+
+## Permissions and safety controls
+
+The design must support:
+
+* allowed-path patterns
+* forbidden paths
+* read-only paths
+* role-specific path permissions
+* allowed shell commands
+* forbidden command patterns
+* command approval requests
+* one-time command approvals
+* task-level command approvals
+* command timeouts
+* environment-variable filtering
+* output-size limits
+* file-change validation after every agent run
+* secret and credential-file protection where practical
+* network policy as a future extension
+
+Block or require approval for commands and patterns such as:
+
+* `sudo`
+* `su`
+* `rm -rf`
+* destructive `find -delete`
+* `git push`
+* `git reset --hard`
+* `git clean -fd`
+* force pushes
+* `terraform apply`
+* `terraform destroy`
+* destructive AWS commands
+* destructive Azure commands
+* destructive Kubernetes commands
+* database drop or truncate operations
+* production deployment commands
+
+The design should distinguish:
+
+* shell command text validation
+* executable-level allowlisting
+* argument validation
+* shell metacharacter risks
+* subprocess invocation without a shell
+* commands initiated directly by AgentFlow
+* commands requested by agents
+
+Do not rely only on prompt instructions.
+
+The orchestration layer must verify path and command policies.
+
+## Deterministic validation
+
+Design a configurable validation pipeline that may run:
+
+* formatting
+* linting
+* type checking
+* unit tests
+* integration tests
+* coverage checks
+* security scanning
+* dependency checks
+* migration checks
+* schema checks
+* changed-path validation
+* forbidden-command validation
+* secret scanning
+* documentation checks
+* Git cleanliness checks
+
+Validation results must be persisted as structured data and supplied to the reviewer.
+
+The reviewer should not be asked to infer facts that scripts can prove.
+
+Example structured evidence:
+
+```yaml
+validation:
+  formatting:
+    status: passed
+  lint:
+    status: passed
+  type_check:
+    status: passed
+  tests:
+    status: passed
+    passed: 142
+    failed: 0
+  changed_path_policy:
+    status: passed
+  coverage:
+    status: passed
+    before: 81.2
+    after: 82.1
+```
+
+Design the validation system around:
+
+* configurable validators
+* validator dependencies
+* fail-fast versus continue-on-failure behaviour
+* structured output parsers
+* raw log persistence
+* timeout handling
+* retries where appropriate
+* validation result hashes
+* project-specific profiles
+
+## Review and repair loop
+
+Design a bounded loop:
+
+1. implement
+2. verify changed paths
+3. validate
+4. review
+5. produce structured findings
+6. repair unresolved blocking findings
+7. validate again
+8. review again
+9. continue until approved or blocked
+
+The loop must stop and mark the task `blocked` when:
+
+* the iteration limit is reached
+* the same failure repeats without meaningful change
+* reviewer findings are not decreasing
+* the diff grows substantially without progress
+* out-of-scope files are changed
+* tests regress
+* validation evidence becomes inconsistent
+* a destructive or unexpected infrastructure change appears
+* requirements are ambiguous
+* scope expansion is requested
+* an agent cannot satisfy a required constraint
+* a provider repeatedly fails
+* a human approval is required
+
+Define a method for detecting non-progress using concepts such as:
+
+* stable failure hashes
+* normalised failure signatures
+* diff-size trends
+* unresolved-finding counts
+* repeated command failures
+* unchanged validation output
+* repeated agent summaries
+
+The repair agent should receive only:
+
+* unresolved relevant findings
+* current diff
+* failed validation evidence
+* approved plan sections relevant to the findings
+* permitted file scope
+
+Do not send the full task history on every repair iteration.
+
+## Structured findings
+
+Reviewer output must follow a strict schema.
+
+Each finding should include:
+
+* ID
+* severity
+* category
+* title
+* file
+* line or range where available
+* description
+* evidence
+* required action
+* status
+* first-seen iteration
+* last-seen iteration
+* resolution evidence
+* related acceptance criterion
+
+Suggested severities:
+
+* `blocking`
+* `high`
+* `medium`
+* `low`
+* `informational`
+
+Suggested categories:
+
+* correctness
+* security
+* architecture
+* maintainability
+* testing
+* documentation
+* performance
+* scope
+* migration
+* infrastructure
+* acceptance-criteria coverage
+
+Suggested finding statuses:
+
+* `open`
+* `in_progress`
+* `resolved`
+* `accepted_risk`
+* `superseded`
+
+The design should explain how findings retain stable identity between review iterations.
+
+## Persisted task data
+
+Design a repository-local structure similar to:
+
+```text
+.agentflow/
+├── config.yaml
+├── project-context.md
+├── architecture-rules.md
+├── validation.yaml
+├── policies/
+├── prompts/
+└── tasks/
+    └── TASK-001/
+        ├── task.yaml
+        ├── requirements.md
+        ├── acceptance-criteria.md
+        ├── plan.md
+        ├── state.json
+        ├── context/
+        ├── runs/
+        ├── events.jsonl
+        ├── findings.json
+        ├── validation-results.json
+        ├── approvals.json
+        └── completion.md
+```
+
+Decide what belongs in:
+
+* repository-local human-readable files
+* a user-level AgentFlow directory
+* SQLite
+* raw log files
+* Git-tracked files
+* `.gitignore`
+
+Prefer human-readable files for:
+
+* requirements
+* acceptance criteria
+* plans
+* project guidance
+* prompt overrides
+* portable task records
+* completion reports
+
+SQLite may be used for:
+
+* querying event history
+* approvals
+* run metadata
+* provider usage
+* cost records
+* internal indexes
+* cross-project task discovery
+
+Explain the trade-offs.
+
+Design for:
+
+* crash recovery
+* partially written files
+* atomic updates
+* schema versioning
+* migrations
+* corrupted task state
+* backward compatibility
+* task archival
+* cloned repositories
+* multiple worktrees referencing the same project configuration
+
+## Event model
+
+Define an append-only event model.
+
+Events may include:
+
+* task created
+* task state changed
+* plan requested
+* plan generated
+* plan approved
+* plan rejected
+* worktree created
+* agent started
+* agent completed
+* agent failed
+* command requested
+* command approved
+* command rejected
+* command executed
+* file-scope violation detected
+* validation started
+* validator completed
+* review completed
+* finding created
+* finding resolved
+* repair iteration started
+* task blocked
+* task resumed
+* final approval granted
+* commit created
+* task completed
+
+Each event should include:
+
+* event ID
+* task ID
+* event type
+* timestamp
+* actor
+* previous state
+* resulting state where applicable
+* correlation ID
+* causation ID
+* structured payload
+* related run ID
+* schema version
+
+Explain whether events are the source of truth or an audit trail alongside snapshot state.
+
+## CLI requirements
+
+The first user interface should be a Python CLI.
+
+Design commands similar to:
+
+```bash
+agentflow init
+agentflow doctor
+agentflow project inspect
+agentflow config show
+agentflow config show --resolved
+
+agentflow task create TASK-001
+agentflow task list
+agentflow task show TASK-001
+agentflow task cancel TASK-001
+agentflow task archive TASK-001
+
+agentflow plan TASK-001
+agentflow approve-plan TASK-001
+agentflow reject-plan TASK-001
+
+agentflow run TASK-001
+agentflow validate TASK-001
+agentflow review TASK-001
+agentflow repair TASK-001
+
+agentflow status TASK-001
+agentflow events TASK-001
+agentflow findings TASK-001
+agentflow context show TASK-001
+
+agentflow approve-command TASK-001
+agentflow reject-command TASK-001
+
+agentflow approve-commit TASK-001
+agentflow block TASK-001
+agentflow resume TASK-001
+```
+
+The CLI should:
+
+* work well in the VS Code integrated terminal
+* provide clear Rich output
+* support JSON output for future integrations
+* support non-interactive execution later
+* require explicit human approval by default
+* provide meaningful exit codes
+* remain scriptable
+* show actionable failure messages
+* avoid hiding provider output when debugging is requested
+
+Include example CLI sessions for:
+
+* project initialisation
+* successful task completion
+* rejected plan
+* validation failure and repair
+* blocked task
+* command approval request
+* resumed task after interruption
+
+## VS Code integration
+
+Do not make a VS Code extension part of the first implementation.
+
+The MVP should instead:
+
+* expose stable CLI commands
+* create optional `.vscode/tasks.json` examples
+* use repository files for visible task state
+* allow worktrees to be opened in separate VS Code windows
+* provide commands that open relevant files
+* produce inspectable Markdown and JSON artifacts
+* make diffs visible through normal Git tooling
+* design a stable application-service API for a future extension
+
+A future VS Code extension may display:
+
+* current project
+* current task
+* workflow state
+* active agent
+* iteration count
+* changed files
+* validation status
+* blocking findings
+* recent events
+* command approval requests
+* plan approval controls
+* final commit controls
+
+The VS Code extension must remain a view and interaction layer.
+
+Do not place orchestration logic inside the extension.
+
+## Future HTML planning and control surface
+
+Design a later local web UI using:
+
+* FastAPI
+* Jinja
+* HTMX
+* SQLite
+* server-sent events or polling
+
+The UI may render:
+
+* project overview
+* task overview
+* implementation plan
+* acceptance-criteria matrix
+* workflow state
+* agent activity
+* Git diff summary
+* validation results
+* reviewer findings
+* event timeline
+* context packs
+* command approval requests
+* approval actions
+
+The HTML view should be generated from the same canonical Markdown and structured state used by the CLI.
+
+The web UI is not part of the MVP, but the architecture should make it straightforward to add.
+
+## Preferred implementation stack
+
+Use:
+
+* Python 3.13+
+* Typer for the CLI
+* Pydantic for schemas
+* SQLite
+* SQLAlchemy or a lightweight alternative if justified
+* `subprocess` for external agent execution
+* `pathlib`
+* Rich for terminal output
+* pytest
+* Ruff
+* mypy or Pyright
+* structured logging
+
+Prefer standard-library components where reasonable.
+
+Avoid unnecessary framework complexity.
+
+Use dependency inversion around:
+
+* agent execution
+* Git operations
+* worktree management
+* command execution
+* validation
+* persistence
+* approvals
+* configuration
+* context construction
+* clock and time
+* event publication
+* user interaction
+
+Design explicit interfaces for concepts such as:
+
+* `AgentAdapter`
+* `GitService`
+* `WorktreeService`
+* `CommandRunner`
+* `PathPolicy`
+* `ValidationService`
+* `TaskRepository`
+* `EventRepository`
+* `ApprovalService`
+* `ContextBuilder`
+* `ConfigurationResolver`
+* `Clock`
+
+## MVP scope
+
+The first usable version should include only:
+
+* installable Python package
+* repository initialisation
+* project detection
+* project-local configuration
+* configuration inheritance
+* task creation
+* persisted task state
+* explicit state transitions
+* append-only event logging
+* resumability
+* one planner adapter
+* human plan approval
+* one implementation worktree
+* one implementer adapter
+* command restrictions
+* path restrictions
+* deterministic validation
+* read-only reviewer
+* structured findings
+* bounded repair loop
+* human final approval
+* final local commit
+* useful VS Code task examples
+
+Do not include yet:
+
+* parallel agents
+* multiple simultaneous specialist worktrees
+* cloud execution
+* automatic pushes
+* automatic PR creation
+* a full VS Code extension
+* the web dashboard
+* embeddings
+* semantic repository indexing
+* distributed queues
+* Kubernetes
+* multi-user access
+* billing
+* plugin marketplaces
+* complex remote execution
+* automatic production deployment
+
+## Deliverables
+
+Create a complete design package in this repository.
+
+Produce:
+
+```text
+docs/
+├── product-vision.md
+├── architecture.md
+├── project-integration-model.md
+├── workflow-state-machine.md
+├── agent-contracts.md
+├── context-construction.md
+├── git-worktree-strategy.md
+├── permissions-and-safety.md
+├── persistence-design.md
+├── event-model.md
+├── validation-and-review-loop.md
+├── cli-design.md
+├── configuration-design.md
+├── failure-and-recovery.md
+├── testing-strategy.md
+├── future-vscode-integration.md
+├── future-web-dashboard.md
+├── mvp-scope.md
+├── implementation-roadmap.md
+├── risks-and-open-questions.md
+└── decisions/
+    ├── 0001-python-cli-first.md
+    ├── 0002-state-machine-owned-by-orchestrator.md
+    ├── 0003-agent-provider-adapters.md
+    ├── 0004-git-worktree-isolation.md
+    ├── 0005-files-plus-sqlite-persistence.md
+    ├── 0006-installed-tool-with-project-local-configuration.md
+    ├── 0007-deterministic-validation-before-ai-review.md
+    └── 0008-explicit-human-approval-boundaries.md
+```
+
+Also create an initial scaffold:
+
+```text
+README.md
+LICENSE
+pyproject.toml
+src/
+└── agentflow/
+    ├── __init__.py
+    ├── cli/
+    ├── domain/
+    ├── application/
+    ├── adapters/
+    ├── infrastructure/
+    ├── configuration/
+    ├── validation/
+    └── templates/
+
+tests/
+├── unit/
+├── integration/
+└── fixtures/
+
+examples/
+├── project-configs/
+├── tasks/
+└── vscode/
+
+.agentflow/
+└── project files required to use AgentFlow on its own repository
+```
+
+Source files may contain:
+
+* interfaces
+* protocols
+* Pydantic schemas
+* enums
+* type definitions
+* package boundaries
+* carefully marked stubs
+* representative examples
+
+Do not implement the full product.
+
+Avoid large amounts of speculative code.
+
+## Required design detail
+
+The documentation must include:
+
+* system context diagram using Mermaid
+* component diagram using Mermaid
+* deployment or runtime diagram using Mermaid
+* workflow state diagram using Mermaid
+* sequence diagram for project initialisation
+* sequence diagram for a complete successful task
+* sequence diagram for failed validation and repair
+* sequence diagram for interrupted execution and resume
+* module boundaries
+* dependency rules
+* core domain entities
+* aggregate boundaries where appropriate
+* Pydantic schema proposals
+* agent adapter interface proposal
+* command-runner interface proposal
+* Git service interface proposal
+* worktree service interface proposal
+* validation interface proposal
+* persistence interface proposal
+* approval interface proposal
+* configuration resolution model
+* context-building model
+* event model
+* failure-handling strategy
+* resumability strategy
+* idempotency strategy
+* security boundaries
+* testing strategy
+* configuration examples
+* project initialisation examples
+* example task files
+* example reviewer findings
+* example validation evidence
+* example event records
+* example CLI sessions
+* phased roadmap
+* explicit non-goals
+* risks and mitigations
+* unanswered design questions
+
+## Implementation roadmap format
+
+Break implementation into vertical slices.
+
+Each slice must include:
+
+* user-visible outcome
+* domain changes
+* application-service changes
+* CLI changes
+* persistence changes
+* infrastructure changes
+* tests
+* acceptance criteria
+* dependencies
+* estimated complexity: small, medium, or large
+* key risks
+
+Prefer slices similar to:
+
+1. installable CLI and repository discovery
+2. safe `agentflow init`
+3. configuration resolution
+4. task creation and repository-local files
+5. state machine and transition validation
+6. event log and resumability
+7. provider-neutral agent execution
+8. planner and plan approval
+9. Git branch and worktree management
+10. restricted command runner
+11. path-policy enforcement
+12. deterministic validation pipeline
+13. reviewer and structured findings
+14. bounded repair loop
+15. final approval and local commit
+16. VS Code task integration examples
+17. documentation agent
+18. optional tester-agent workflow
+
+The first implementation slice should produce something that can be run and tested by a developer, not only internal abstractions.
+
+## Testing expectations
+
+The testing strategy should cover:
+
+* state-machine transition tests
+* configuration inheritance tests
+* repository-root discovery tests
+* project detection tests
+* safe initialisation tests
+* idempotent `agentflow init`
+* path-policy tests
+* command-policy tests
+* shell-injection resistance
+* worktree lifecycle tests
+* interrupted-process recovery
+* malformed agent-output handling
+* validation parser tests
+* finding identity tests
+* non-progress detection
+* event-log consistency
+* snapshot and event reconciliation
+* CLI integration tests
+* fake-agent adapter tests
+* fake-Git-service tests
+* real temporary Git repository tests
+
+Use test doubles around external AI providers.
+
+The test suite must not require paid provider access.
+
+## Working approach
+
+Before creating files:
+
+1. inspect the repository
+2. identify existing files and conventions
+3. propose the final document structure
+4. propose the package structure
+5. identify major architectural decisions
+6. identify risks and unanswered questions
+7. create an implementation checklist
+
+Then create the documentation and scaffold.
+
+Do not silently make major assumptions.
+
+Record assumptions clearly in the relevant documents.
+
+Do not build an overengineered platform.
+
+Optimise for:
+
+* clarity
+* inspectability
+* developer control
+* testability
+* provider replaceability
+* local development
+* incremental implementation
+* understandable Git history
+* safe interruption and resume
+* one developer maintaining the system
+* use inside VS Code without depending on VS Code
+* retaining developer understanding of the code being produced
+
+## Final response
+
+When complete, provide:
+
+* a concise description of the proposed architecture
+* the files created
+* the most important architectural decisions
+* the configuration and project-integration model
+* the recommended first implementation slice
+* major risks
+* unresolved questions
+* anything deliberately excluded from the MVP
+* the exact next Copilot prompt I should use to implement slice one
+
+Do not begin implementing slice one unless explicitly asked.

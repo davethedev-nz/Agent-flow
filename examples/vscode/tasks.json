@@ -1,0 +1,17 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "AgentFlow: Doctor",
+      "type": "shell",
+      "command": "agentflow doctor",
+      "problemMatcher": []
+    },
+    {
+      "label": "AgentFlow: Inspect Project",
+      "type": "shell",
+      "command": "agentflow project-inspect",
+      "problemMatcher": []
+    }
+  ]
+}

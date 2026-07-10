@@ -1,0 +1,12 @@
+schema_version: 1
+editable:
+  planner: []
+  implementer: [src, tests, docs]
+  reviewer: []
+  documenter: [docs]
+read_only:
+  - .agentflow
+forbidden:
+  - .git
+  - .venv
+  - dist

@@ -1,0 +1,12 @@
+schema_version: 1
+project:
+  id: sample-django
+  stack_profiles: [django]
+paths:
+  source: [app, project]
+  tests: [tests]
+  documentation: [docs]
+  infrastructure: []
+  forbidden: [.venv, staticfiles, .git]
+validation:
+  profile: django

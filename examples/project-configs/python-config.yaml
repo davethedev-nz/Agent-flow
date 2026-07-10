@@ -1,0 +1,20 @@
+schema_version: 1
+project:
+  id: sample-python
+  stack_profiles: [python]
+paths:
+  source: [src]
+  tests: [tests]
+  documentation: [docs]
+  infrastructure: []
+  forbidden: [.venv, dist, .git]
+validation:
+  profile: python
+autonomy:
+  plan_requires_approval: true
+  code_edits_require_approval: false
+  scope_expansion_requires_approval: true
+  command_approval_mode: allowlist
+  maximum_repair_iterations: 4
+  commit_requires_approval: true
+  push_allowed: false

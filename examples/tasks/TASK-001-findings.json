@@ -1,0 +1,18 @@
+[
+  {
+    "finding_id": "finding-correctness-transition-created-to-complete",
+    "severity": "blocking",
+    "category": "correctness",
+    "title": "Task can jump directly from created to complete",
+    "file": "src/agentflow/application/state_machine.py",
+    "line": 42,
+    "description": "The transition table allows a direct path from created to complete.",
+    "evidence": "Transition map contains 'complete' under allowed states for 'created'.",
+    "required_action": "Remove the illegal transition and add a regression test.",
+    "status": "open",
+    "first_seen_iteration": 1,
+    "last_seen_iteration": 1,
+    "resolution_evidence": null,
+    "related_acceptance_criterion": "Invalid transitions are rejected deterministically."
+  }
+]

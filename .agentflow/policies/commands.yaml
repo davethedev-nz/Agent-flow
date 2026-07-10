@@ -1,0 +1,15 @@
+schema_version: 1
+allowed_executables:
+  - python
+  - pytest
+  - ruff
+  - mypy
+  - rg
+  - git
+blocked_patterns:
+  - sudo
+  - su
+  - git push
+  - git reset --hard
+  - git clean -fd
+  - rm -rf

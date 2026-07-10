@@ -1,0 +1,18 @@
+{
+  "validation": {
+    "ruff": {
+      "status": "passed"
+    },
+    "mypy": {
+      "status": "passed"
+    },
+    "pytest": {
+      "status": "passed",
+      "passed": 18,
+      "failed": 0
+    },
+    "changed_path_policy": {
+      "status": "passed"
+    }
+  }
+}

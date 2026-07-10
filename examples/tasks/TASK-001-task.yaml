@@ -1,0 +1,4 @@
+task_id: TASK-001
+title: Add task state transition validator
+current_state: created
+repository_root: /repo

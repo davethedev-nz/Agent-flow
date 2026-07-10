@@ -1,0 +1,14 @@
+schema_version: 1
+validators:
+  - validator_id: ruff
+    description: Ruff linting
+    command: [ruff, check, .]
+    timeout_seconds: 300
+  - validator_id: mypy
+    description: Static typing
+    command: [mypy, src]
+    timeout_seconds: 300
+  - validator_id: pytest
+    description: Unit and integration tests
+    command: [pytest]
+    timeout_seconds: 600
