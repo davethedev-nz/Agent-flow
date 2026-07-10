@@ -9,6 +9,7 @@ from rich.table import Table
 
 from agentflow import __version__
 from agentflow.application.agent_execution import AgentExecutionService
+from agentflow.application.command_runner import RestrictedCommandRunnerService
 from agentflow.application.planning import PlanningService
 from agentflow.application.configuration_resolution import ConfigurationResolutionService
 from agentflow.application.project_init import ProjectInitService
@@ -17,6 +18,7 @@ from agentflow.application.state_transitions import TaskTransitionService
 from agentflow.application.task_events import TaskEventService
 from agentflow.application.task_records import TaskRecordService
 from agentflow.domain.enums import TaskState
+from agentflow.domain.commands import CommandExecutionResult
 from agentflow.domain.events import TaskEvent
 from agentflow.domain.init import InitApplyResult, InitProposal
 from agentflow.domain.enums import AgentRole
@@ -65,6 +67,10 @@ def _agent_execution_service() -> AgentExecutionService:
 
 def _planning_service() -> PlanningService:
     return PlanningService(FilesystemRepositoryDiscovery())
+
+
+def _command_runner_service() -> RestrictedCommandRunnerService:
+    return RestrictedCommandRunnerService(FilesystemRepositoryDiscovery())
 
 
 def _print_json(payload: object) -> None:
@@ -243,6 +249,10 @@ def _print_task_events(events: list[TaskEvent], task_id: str) -> None:
 def _print_agent_result(result: object) -> None:
     payload = getattr(result, "model_dump")(mode="json")
     _print_json(payload)
+
+
+def _print_command_result(result: CommandExecutionResult) -> None:
+    _print_json(result.model_dump(mode="json"))
 
 
 @app.callback()
@@ -597,6 +607,76 @@ def agent_run(
             _print_json(result.model_dump(mode="json"))
         else:
             _print_agent_result(result)
+    except ValueError as error:
+        payload = {"status": "error", "message": str(error)}
+        if as_json:
+            _print_json(payload)
+        else:
+            console.print(payload)
+        raise typer.Exit(1) from error
+
+
+@app.command("command-run")
+def command_run(
+    task_id: str,
+    path: Path = typer.Argument(Path.cwd(), help="Path to inspect."),
+    command: list[str] = typer.Option(..., "--command", help="Command tokens to execute without a shell."),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON output."),
+) -> None:
+    """Run a command through the restricted command policy."""
+    try:
+        result = _command_runner_service().run(path, task_id, command)
+        if as_json:
+            _print_json(result.model_dump(mode="json"))
+        else:
+            _print_command_result(result)
+        if result.approval_required:
+            raise typer.Exit(4)
+    except ValueError as error:
+        payload = {"status": "error", "message": str(error)}
+        if as_json:
+            _print_json(payload)
+        else:
+            console.print(payload)
+        raise typer.Exit(1) from error
+
+
+@app.command("approve-command")
+def approve_command(
+    task_id: str,
+    path: Path = typer.Argument(Path.cwd(), help="Path to inspect."),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON output."),
+) -> None:
+    """Approve and execute the pending command for a task."""
+    try:
+        result = _command_runner_service().approve(path, task_id)
+        if as_json:
+            _print_json(result.model_dump(mode="json"))
+        else:
+            _print_command_result(result)
+    except ValueError as error:
+        payload = {"status": "error", "message": str(error)}
+        if as_json:
+            _print_json(payload)
+        else:
+            console.print(payload)
+        raise typer.Exit(1) from error
+
+
+@app.command("reject-command")
+def reject_command(
+    task_id: str,
+    path: Path = typer.Argument(Path.cwd(), help="Path to inspect."),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON output."),
+) -> None:
+    """Reject the pending command for a task."""
+    try:
+        _command_runner_service().reject(path, task_id)
+        payload = {"task_id": task_id, "status": "rejected"}
+        if as_json:
+            _print_json(payload)
+        else:
+            console.print(payload)
     except ValueError as error:
         payload = {"status": "error", "message": str(error)}
         if as_json:
