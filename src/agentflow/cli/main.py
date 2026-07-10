@@ -11,8 +11,10 @@ from agentflow import __version__
 from agentflow.application.configuration_resolution import ConfigurationResolutionService
 from agentflow.application.project_init import ProjectInitService
 from agentflow.application.project_inspection import ProjectInspectionService
+from agentflow.application.task_records import TaskRecordService
 from agentflow.domain.init import InitApplyResult, InitProposal
 from agentflow.domain.project import DoctorReport, ProjectInspection
+from agentflow.domain.task_records import TaskCreateResult, TaskRecord, TaskRecordSummary
 from agentflow.infrastructure.repository_discovery import FilesystemRepositoryDiscovery
 
 app = typer.Typer(help="AgentFlow CLI")
@@ -36,6 +38,10 @@ def _project_init_service() -> ProjectInitService:
 
 def _configuration_resolution_service() -> ConfigurationResolutionService:
     return ConfigurationResolutionService(FilesystemRepositoryDiscovery())
+
+
+def _task_record_service() -> TaskRecordService:
+    return TaskRecordService(FilesystemRepositoryDiscovery())
 
 
 def _print_json(payload: object) -> None:
@@ -132,6 +138,39 @@ def _print_project_config(project_config: dict[str, object]) -> None:
     for key, value in flatten(project_config):
         table.add_row(key, json.dumps(value))
 
+    console.print(table)
+
+
+def _print_task_create_result(result: TaskCreateResult) -> None:
+    table = Table(title="AgentFlow task created")
+    table.add_column("Field")
+    table.add_column("Value")
+    table.add_row("Task ID", result.task.task_id)
+    table.add_row("Title", result.task.title)
+    table.add_row("State", result.task.current_state)
+    table.add_row("Files", ", ".join(result.created_files))
+    console.print(table)
+
+
+def _print_task_list(tasks: list[TaskRecordSummary]) -> None:
+    table = Table(title="AgentFlow tasks")
+    table.add_column("Task ID")
+    table.add_column("Title")
+    table.add_column("State")
+    for task in tasks:
+        table.add_row(task.task_id, task.title, task.current_state)
+    console.print(table)
+
+
+def _print_task_show(task: TaskRecord) -> None:
+    table = Table(title=f"AgentFlow task {task.task_id}")
+    table.add_column("Field")
+    table.add_column("Value")
+    table.add_row("Task ID", task.task_id)
+    table.add_row("Title", task.title)
+    table.add_row("State", task.current_state)
+    table.add_row("Repository root", str(task.repository_root))
+    table.add_row("Created at", task.created_at)
     console.print(table)
 
 
@@ -251,15 +290,69 @@ def config_show(
 
 
 @task_app.command("create")
-def task_create(task_id: str) -> None:
-    """Print a task creation stub."""
-    console.print(
-        {
-            "task_id": task_id,
-            "status": "stub",
-            "message": "Task persistence is planned for slice 4.",
-        }
-    )
+def task_create(
+    task_id: str,
+    path: Path = typer.Argument(Path.cwd(), help="Path to inspect."),
+    title: str | None = typer.Option(None, "--title", help="Optional task title."),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON output."),
+) -> None:
+    """Create a repository-local task record."""
+    try:
+        result = _task_record_service().create(path, task_id, title=title)
+        if as_json:
+            _print_json(result.model_dump(mode="json"))
+        else:
+            _print_task_create_result(result)
+    except ValueError as error:
+        payload = {"status": "error", "message": str(error)}
+        if as_json:
+            _print_json(payload)
+        else:
+            console.print(payload)
+        raise typer.Exit(1) from error
+
+
+@task_app.command("list")
+def task_list(
+    path: Path = typer.Argument(Path.cwd(), help="Path to inspect."),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON output."),
+) -> None:
+    """List repository-local tasks."""
+    try:
+        tasks = _task_record_service().list_tasks(path)
+        if as_json:
+            _print_json([task.model_dump(mode="json") for task in tasks])
+        else:
+            _print_task_list(tasks)
+    except ValueError as error:
+        payload = {"status": "error", "message": str(error)}
+        if as_json:
+            _print_json(payload)
+        else:
+            console.print(payload)
+        raise typer.Exit(1) from error
+
+
+@task_app.command("show")
+def task_show(
+    task_id: str,
+    path: Path = typer.Argument(Path.cwd(), help="Path to inspect."),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON output."),
+) -> None:
+    """Show a repository-local task record."""
+    try:
+        task = _task_record_service().show(path, task_id)
+        if as_json:
+            _print_json(task.model_dump(mode="json"))
+        else:
+            _print_task_show(task)
+    except ValueError as error:
+        payload = {"status": "error", "message": str(error)}
+        if as_json:
+            _print_json(payload)
+        else:
+            console.print(payload)
+        raise typer.Exit(1) from error
 
 
 if __name__ == "__main__":
