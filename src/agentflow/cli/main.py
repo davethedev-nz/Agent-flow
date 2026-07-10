@@ -8,7 +8,9 @@ from rich.console import Console
 from rich.table import Table
 
 from agentflow import __version__
+from agentflow.application.project_init import ProjectInitService
 from agentflow.application.project_inspection import ProjectInspectionService
+from agentflow.domain.init import InitApplyResult, InitProposal
 from agentflow.domain.project import DoctorReport, ProjectInspection
 from agentflow.infrastructure.repository_discovery import FilesystemRepositoryDiscovery
 
@@ -25,6 +27,10 @@ app.add_typer(task_app, name="task")
 
 def _project_inspection_service() -> ProjectInspectionService:
     return ProjectInspectionService(FilesystemRepositoryDiscovery())
+
+
+def _project_init_service() -> ProjectInitService:
+    return ProjectInitService(FilesystemRepositoryDiscovery())
 
 
 def _print_json(payload: object) -> None:
@@ -55,6 +61,42 @@ def _print_doctor_report(report: DoctorReport) -> None:
     console.print(table)
 
 
+def _print_init_preview(proposal: InitProposal) -> None:
+    table = Table(title="AgentFlow init preview")
+    table.add_column("Field")
+    table.add_column("Value")
+    table.add_row("Requested path", str(proposal.requested_path))
+    table.add_row("Repository root", str(proposal.repository_root) if proposal.repository_root else "not found")
+    table.add_row("Profile", proposal.selected_profile or "none")
+    table.add_row("Stack hints", ", ".join(proposal.stack_hints) if proposal.stack_hints else "none")
+    table.add_row("Can write", "yes" if proposal.can_write else "no")
+    table.add_row("Source paths", ", ".join(proposal.proposed_paths.source) or "none")
+    table.add_row("Test paths", ", ".join(proposal.proposed_paths.tests) or "none")
+    table.add_row("Docs paths", ", ".join(proposal.proposed_paths.documentation) or "none")
+    table.add_row("Infra paths", ", ".join(proposal.proposed_paths.infrastructure) or "none")
+    console.print(table)
+
+    files_table = Table(title="Planned files")
+    files_table.add_column("Path")
+    files_table.add_column("Status")
+    for file_status in proposal.files:
+        files_table.add_row(file_status.relative_path, file_status.status)
+    console.print(files_table)
+
+    for warning in proposal.warnings:
+        console.print(f"warning: {warning}")
+
+
+def _print_init_apply_result(result: InitApplyResult) -> None:
+    table = Table(title="AgentFlow init result")
+    table.add_column("Category")
+    table.add_column("Files")
+    table.add_row("Written", ", ".join(result.written_files) or "none")
+    table.add_row("Unchanged", ", ".join(result.unchanged_files) or "none")
+    table.add_row("Conflicts", ", ".join(result.conflict_files) or "none")
+    console.print(table)
+
+
 @app.callback()
 def main() -> None:
     """AgentFlow command group."""
@@ -82,14 +124,43 @@ def doctor(
 
 
 @app.command("init")
-def init() -> None:
-    """Show an initialization stub."""
-    console.print(
-        {
-            "status": "stub",
-            "message": "Repository discovery and safe initialization land in slices 1 and 2.",
-        }
-    )
+def init(
+    path: Path = typer.Argument(Path.cwd(), help="Path to initialize."),
+    profile: str | None = typer.Option(None, "--profile", help="Override the detected project profile."),
+    write: bool = typer.Option(False, "--write", help="Write the proposed files to disk."),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON output."),
+) -> None:
+    """Preview or write a safe AgentFlow project initialization."""
+    service = _project_init_service()
+
+    if write:
+        try:
+            result = service.apply(path, profile)
+        except ValueError as error:
+            payload = {"status": "error", "message": str(error)}
+            if as_json:
+                _print_json(payload)
+            else:
+                console.print(payload)
+            raise typer.Exit(1) from error
+
+        if as_json:
+            _print_json(result.model_dump(mode="json"))
+        else:
+            _print_init_apply_result(result)
+
+        if result.conflict_files:
+            raise typer.Exit(1)
+        return
+
+    proposal = service.preview(path, profile)
+    if as_json:
+        _print_json(proposal.model_dump(mode="json"))
+    else:
+        _print_init_preview(proposal)
+
+    if not proposal.is_git_repository:
+        raise typer.Exit(1)
 
 
 @project_app.command("inspect")
