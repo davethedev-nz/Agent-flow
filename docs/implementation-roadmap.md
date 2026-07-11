@@ -4,6 +4,14 @@
 
 Build in vertical slices so each slice produces a developer-visible capability and leaves behind tests, not just abstractions.
 
+## Estimation basis
+
+All delivery estimates and pacing assumptions in this roadmap are based on AI-assisted implementation.
+
+- Estimates assume AI tooling performs most code generation, test iteration, and refactoring.
+- Human time is primarily orchestration, design decisions, validation, and review.
+- Estimates are not calibrated to fully manual implementation timelines.
+
 ## Slice checklist
 
 - preserve local-first workflow control
