@@ -10,19 +10,24 @@ from rich.table import Table
 from agentflow import __version__
 from agentflow.application.agent_execution import AgentExecutionService
 from agentflow.application.command_runner import RestrictedCommandRunnerService
+from agentflow.application.finalization import FinalizationService
 from agentflow.application.path_policy import PathPolicyViolationError
 from agentflow.application.planning import PlanningService
+from agentflow.application.review import ReviewService
+from agentflow.application.run_flow import RunFlowService
 from agentflow.application.configuration_resolution import ConfigurationResolutionService
 from agentflow.application.project_init import ProjectInitService
 from agentflow.application.project_inspection import ProjectInspectionService
 from agentflow.application.state_transitions import TaskTransitionService
 from agentflow.application.task_events import TaskEventService
 from agentflow.application.task_records import TaskRecordService
+from agentflow.application.validation import ValidationService
 from agentflow.domain.enums import TaskState
 from agentflow.domain.commands import CommandExecutionResult
 from agentflow.domain.events import TaskEvent
 from agentflow.domain.init import InitApplyResult, InitProposal
 from agentflow.domain.enums import AgentRole
+from agentflow.domain.models import ReviewResult, ValidationResult
 from agentflow.domain.project import DoctorReport, ProjectInspection
 from agentflow.domain.task_records import TaskCreateResult, TaskRecord, TaskRecordSummary, TaskStatusResult, TaskTransitionResult
 from agentflow.infrastructure.repository_discovery import FilesystemRepositoryDiscovery
@@ -72,6 +77,22 @@ def _planning_service() -> PlanningService:
 
 def _command_runner_service() -> RestrictedCommandRunnerService:
     return RestrictedCommandRunnerService(FilesystemRepositoryDiscovery())
+
+
+def _validation_service() -> ValidationService:
+    return ValidationService(FilesystemRepositoryDiscovery())
+
+
+def _review_service() -> ReviewService:
+    return ReviewService(FilesystemRepositoryDiscovery())
+
+
+def _run_flow_service() -> RunFlowService:
+    return RunFlowService(FilesystemRepositoryDiscovery())
+
+
+def _finalization_service() -> FinalizationService:
+    return FinalizationService(FilesystemRepositoryDiscovery())
 
 
 def _print_json(payload: object) -> None:
@@ -253,6 +274,14 @@ def _print_agent_result(result: object) -> None:
 
 
 def _print_command_result(result: CommandExecutionResult) -> None:
+    _print_json(result.model_dump(mode="json"))
+
+
+def _print_validation_results(results: list[ValidationResult]) -> None:
+    _print_json([item.model_dump(mode="json") for item in results])
+
+
+def _print_review_result(result: ReviewResult) -> None:
     _print_json(result.model_dump(mode="json"))
 
 
@@ -685,6 +714,105 @@ def reject_command(
             _print_json(payload)
         else:
             console.print(payload)
+    except ValueError as error:
+        payload = {"status": "error", "message": str(error)}
+        if as_json:
+            _print_json(payload)
+        else:
+            console.print(payload)
+        raise typer.Exit(1) from error
+
+
+@app.command("validate")
+def validate_task(
+    task_id: str,
+    path: Path = typer.Argument(Path.cwd(), help="Path to inspect."),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON output."),
+) -> None:
+    """Run deterministic validators for a task and persist structured results."""
+    try:
+        results = _validation_service().run_for_task(path, task_id)
+        if as_json:
+            _print_json([item.model_dump(mode="json") for item in results])
+        else:
+            _print_validation_results(results)
+        if any(item.status != "passed" for item in results):
+            raise typer.Exit(6)
+    except ValueError as error:
+        payload = {"status": "error", "message": str(error)}
+        if as_json:
+            _print_json(payload)
+        else:
+            console.print(payload)
+        raise typer.Exit(1) from error
+
+
+@app.command("review")
+def review_task(
+    task_id: str,
+    path: Path = typer.Argument(Path.cwd(), help="Path to inspect."),
+    adapter: str = typer.Option("fake", "--adapter", help="Adapter to use for reviewing."),
+    command: list[str] = typer.Option([], "--command", help="Command tokens for subprocess-text reviewer adapter."),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON output."),
+) -> None:
+    """Run reviewer analysis and persist findings with a verdict."""
+    try:
+        result = _review_service().review_task(path, task_id, adapter=adapter, command=command or None)
+        if as_json:
+            _print_json(result.model_dump(mode="json"))
+        else:
+            _print_review_result(result)
+        if result.verdict != "approved":
+            raise typer.Exit(6)
+    except ValueError as error:
+        payload = {"status": "error", "message": str(error)}
+        if as_json:
+            _print_json(payload)
+        else:
+            console.print(payload)
+        raise typer.Exit(1) from error
+
+
+@app.command("run")
+def run_task(
+    task_id: str,
+    path: Path = typer.Argument(Path.cwd(), help="Path to inspect."),
+    adapter: str = typer.Option("fake", "--adapter", help="Adapter to use for implementation/review."),
+    command: list[str] = typer.Option([], "--command", help="Command tokens for subprocess-text adapter."),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON output."),
+) -> None:
+    """Run bounded implement/validate/review/repair orchestration."""
+    try:
+        result = _run_flow_service().run_task(path, task_id, adapter=adapter, command=command or None)
+        if as_json:
+            _print_json(result)
+        else:
+            _print_json(result)
+        if result.get("final_state") == "blocked":
+            raise typer.Exit(7)
+    except ValueError as error:
+        payload = {"status": "error", "message": str(error)}
+        if as_json:
+            _print_json(payload)
+        else:
+            console.print(payload)
+        raise typer.Exit(1) from error
+
+
+@app.command("approve-commit")
+def approve_commit(
+    task_id: str,
+    path: Path = typer.Argument(Path.cwd(), help="Path to inspect."),
+    message: str | None = typer.Option(None, "--message", help="Optional commit message."),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON output."),
+) -> None:
+    """Approve final review and create the local completion commit."""
+    try:
+        payload = _finalization_service().approve_and_commit(path, task_id, message=message)
+        if as_json:
+            _print_json(payload)
+        else:
+            _print_json(payload)
     except ValueError as error:
         payload = {"status": "error", "message": str(error)}
         if as_json:
