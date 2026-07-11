@@ -6,7 +6,7 @@ The product goal is simple:
 
 > AgentFlow owns the workflow. Agents perform bounded jobs. Git owns the evidence. The developer approves important transitions.
 
-This repository contains the initial architecture, product design, implementation roadmap, and a thin Python scaffold for the installable `agentflow` tool. It does **not** implement the full orchestration product yet.
+This repository contains architecture and product docs plus a working Python implementation of the core orchestration loop through slice 15.
 
 ## What is in this repository
 
@@ -27,7 +27,7 @@ This repository contains the initial architecture, product design, implementatio
 - Safe interruption and resume
 - Reusable across many unrelated Git repositories
 
-## Planned CLI
+## Current CLI
 
 ```bash
 agentflow init
@@ -36,18 +36,41 @@ agentflow project inspect
 agentflow config show --resolved
 
 agentflow task create TASK-001
+agentflow task list
+agentflow task show TASK-001
+agentflow task status TASK-001
+agentflow events TASK-001
+
 agentflow plan TASK-001
 agentflow approve-plan TASK-001
-agentflow run TASK-001
+agentflow reject-plan TASK-001
+agentflow agent-run TASK-001 --role implementer --prompt "..."
+
+agentflow command-run TASK-001 --command git --command status
+agentflow approve-command TASK-001
+agentflow reject-command TASK-001
+
 agentflow validate TASK-001
 agentflow review TASK-001
-agentflow repair TASK-001
+agentflow run TASK-001
+agentflow block TASK-001
+agentflow resume TASK-001 --to planning
 agentflow approve-commit TASK-001
 ```
 
 ## Current status
 
-The current code is intentionally thin. It defines package boundaries, interfaces, schemas, example templates, and a basic CLI entry point so implementation can proceed in small vertical slices.
+Slices 1 through 15 are implemented on this feature branch, including:
+
+- repository discovery and safe initialization
+- task persistence, transitions, events, and worktrees
+- provider-neutral agent execution
+- command and path policy enforcement
+- deterministic validation and reviewer findings
+- bounded repair loop orchestration
+- final approval with local completion commit
+
+Remaining roadmap work starts at slice 16.
 
 ## Development
 

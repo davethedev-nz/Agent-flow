@@ -19,6 +19,11 @@ All delivery estimates and pacing assumptions in this roadmap are based on AI-as
 - persist evidence before adding UX polish
 - add tests with every slice
 
+## Progress status
+
+- Completed on this branch: slices 1 through 15
+- Remaining: slices 16 through 18
+
 ## Slice 1: Installable CLI and repository discovery
 
 - User-visible outcome: `agentflow version`, `agentflow doctor`, and `agentflow project inspect` run from an installed package and can locate a repository root.
