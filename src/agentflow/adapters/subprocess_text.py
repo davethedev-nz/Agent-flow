@@ -27,6 +27,7 @@ class SubprocessTextAgentAdapter:
         )
         finished_at = datetime.now(UTC)
         raw_output_path = request.working_directory / ".agentflow" / "tmp-subprocess-output.txt"
+        raw_output_path.parent.mkdir(parents=True, exist_ok=True)
         raw_output_path.write_text(completed.stdout, encoding="utf-8")
         return AgentResult(
             success=completed.returncode == 0,

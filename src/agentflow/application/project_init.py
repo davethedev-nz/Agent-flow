@@ -241,6 +241,7 @@ class ProjectInitService:
                         "planner": [],
                         "implementer": editable_paths,
                         "reviewer": [],
+                        "tester": proposed_paths.tests,
                         "documenter": proposed_paths.documentation,
                     },
                     "read_only": [".agentflow"],

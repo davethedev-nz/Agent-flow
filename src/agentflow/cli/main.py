@@ -10,6 +10,7 @@ from rich.table import Table
 from agentflow import __version__
 from agentflow.application.agent_execution import AgentExecutionService
 from agentflow.application.command_runner import RestrictedCommandRunnerService
+from agentflow.application.path_policy import PathPolicyViolationError
 from agentflow.application.planning import PlanningService
 from agentflow.application.configuration_resolution import ConfigurationResolutionService
 from agentflow.application.project_init import ProjectInitService
@@ -607,6 +608,13 @@ def agent_run(
             _print_json(result.model_dump(mode="json"))
         else:
             _print_agent_result(result)
+    except PathPolicyViolationError as error:
+        payload = {"status": "error", "message": str(error), "violations": error.violations}
+        if as_json:
+            _print_json(payload)
+        else:
+            console.print(payload)
+        raise typer.Exit(3) from error
     except ValueError as error:
         payload = {"status": "error", "message": str(error)}
         if as_json:

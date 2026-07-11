@@ -1,4 +1,5 @@
 from pathlib import Path
+import subprocess
 
 from typer.testing import CliRunner
 
@@ -8,11 +9,22 @@ runner = CliRunner()
 
 
 def _create_initialized_task(repository_root: Path) -> None:
-    (repository_root / ".git").mkdir(parents=True)
+    repository_root.mkdir(parents=True)
+    _run_git(repository_root, "init", "-b", "main")
+    _run_git(repository_root, "config", "user.email", "test@example.com")
+    _run_git(repository_root, "config", "user.name", "Test User")
     (repository_root / "src").mkdir()
     (repository_root / "pyproject.toml").write_text("[project]\nname = 'demo'\n", encoding="utf-8")
+    _run_git(repository_root, "add", ".")
+    _run_git(repository_root, "commit", "-m", "init")
     assert runner.invoke(app, ["init", str(repository_root), "--write"]).exit_code == 0
     assert runner.invoke(app, ["task", "create", "TASK-001", str(repository_root), "--title", "Demo task"]).exit_code == 0
+
+
+def _run_git(repository_root: Path, *args: str) -> None:
+    completed = subprocess.run(["git", *args], cwd=repository_root, capture_output=True, text=True, check=False)
+    if completed.returncode != 0:
+        raise AssertionError(completed.stderr or completed.stdout)
 
 
 def _write_state(repository_root: Path, state: str) -> None:
