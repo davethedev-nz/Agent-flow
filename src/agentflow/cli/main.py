@@ -316,6 +316,7 @@ def init(
     path: Path = typer.Argument(Path.cwd(), help="Path to initialize."),
     profile: str | None = typer.Option(None, "--profile", help="Override the detected project profile."),
     write: bool = typer.Option(False, "--write", help="Write the proposed files to disk."),
+    vscode_tasks: bool = typer.Option(False, "--vscode-tasks", help="Include example VS Code tasks."),
     as_json: bool = typer.Option(False, "--json", help="Emit JSON output."),
 ) -> None:
     """Preview or write a safe AgentFlow project initialization."""
@@ -323,7 +324,7 @@ def init(
 
     if write:
         try:
-            result = service.apply(path, profile)
+            result = service.apply(path, profile, include_vscode_tasks=vscode_tasks)
         except ValueError as error:
             payload = {"status": "error", "message": str(error)}
             if as_json:
@@ -341,7 +342,7 @@ def init(
             raise typer.Exit(1)
         return
 
-    proposal = service.preview(path, profile)
+    proposal = service.preview(path, profile, include_vscode_tasks=vscode_tasks)
     if as_json:
         _print_json(proposal.model_dump(mode="json"))
     else:

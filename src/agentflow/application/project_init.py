@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -14,7 +15,12 @@ class ProjectInitService:
     def __init__(self, discovery: FilesystemRepositoryDiscovery) -> None:
         self._discovery = discovery
 
-    def preview(self, path: Path, profile: str | None = None) -> InitProposal:
+    def preview(
+        self,
+        path: Path,
+        profile: str | None = None,
+        include_vscode_tasks: bool = False,
+    ) -> InitProposal:
         inspection = self._discovery.inspect(path)
         if not inspection.is_git_repository or inspection.repository_root is None:
             return InitProposal(
@@ -31,7 +37,13 @@ class ProjectInitService:
         selected_profile = profile or self._default_profile(inspection)
         proposed_paths = self._propose_paths(inspection.repository_root, selected_profile)
         validation_commands = self._validation_commands(selected_profile, proposed_paths)
-        expected_files = self._expected_files(inspection, selected_profile, proposed_paths, validation_commands)
+        expected_files = self._expected_files(
+            inspection,
+            selected_profile,
+            proposed_paths,
+            validation_commands,
+            include_vscode_tasks=include_vscode_tasks,
+        )
         file_statuses = self._file_statuses(inspection.repository_root, expected_files)
         conflict_exists = any(item.status == "conflict" for item in file_statuses)
 
@@ -54,8 +66,13 @@ class ProjectInitService:
             can_write=not conflict_exists,
         )
 
-    def apply(self, path: Path, profile: str | None = None) -> InitApplyResult:
-        proposal = self.preview(path, profile)
+    def apply(
+        self,
+        path: Path,
+        profile: str | None = None,
+        include_vscode_tasks: bool = False,
+    ) -> InitApplyResult:
+        proposal = self.preview(path, profile, include_vscode_tasks=include_vscode_tasks)
         if not proposal.is_git_repository or proposal.repository_root is None or proposal.selected_profile is None:
             raise ValueError("Current path is not inside a Git repository.")
 
@@ -64,6 +81,7 @@ class ProjectInitService:
             proposal.selected_profile,
             proposal.proposed_paths,
             proposal.validation_commands,
+            include_vscode_tasks=include_vscode_tasks,
         )
 
         written_files: list[str] = []
@@ -152,6 +170,7 @@ class ProjectInitService:
         selected_profile: str,
         proposed_paths: ProposedPaths,
         validation_commands: list[list[str]],
+        include_vscode_tasks: bool = False,
     ) -> dict[str, str]:
         repository_root = inspection.repository_root
         if repository_root is None:
@@ -202,7 +221,7 @@ class ProjectInitService:
         command_allowlist = sorted({command[0] for command in validation_commands} | {"git", "python", "rg"})
         editable_paths = [*proposed_paths.source, *proposed_paths.tests, *proposed_paths.documentation]
 
-        return {
+        files = {
             ".agentflow/config.yaml": yaml.safe_dump(config, sort_keys=False),
             ".agentflow/project-context.md": (
                 "# Project Context\n\n"
@@ -259,3 +278,28 @@ class ProjectInitService:
             ),
             ".agentflow/tasks/.gitkeep": "",
         }
+
+        if include_vscode_tasks:
+            files[".vscode/tasks.json"] = self._vscode_tasks_template()
+
+        return files
+
+    def _vscode_tasks_template(self) -> str:
+        tasks = {
+            "version": "2.0.0",
+            "tasks": [
+                {
+                    "label": "AgentFlow: Doctor",
+                    "type": "shell",
+                    "command": "agentflow doctor",
+                    "problemMatcher": [],
+                },
+                {
+                    "label": "AgentFlow: Inspect Project",
+                    "type": "shell",
+                    "command": "agentflow project-inspect",
+                    "problemMatcher": [],
+                },
+            ],
+        }
+        return json.dumps(tasks, indent=2) + "\n"

@@ -21,8 +21,8 @@ All delivery estimates and pacing assumptions in this roadmap are based on AI-as
 
 ## Progress status
 
-- Completed on this branch: slices 1 through 15
-- Remaining: slices 16 through 18
+- Completed on this branch: slices 1 through 16
+- Remaining: slices 17 through 18
 
 ## Slice 1: Installable CLI and repository discovery
 

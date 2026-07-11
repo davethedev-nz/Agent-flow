@@ -69,8 +69,9 @@ Slices 1 through 15 are implemented on this feature branch, including:
 - deterministic validation and reviewer findings
 - bounded repair loop orchestration
 - final approval with local completion commit
+- optional VS Code task examples during init
 
-Remaining roadmap work starts at slice 16.
+Remaining roadmap work starts at slice 17.
 
 ## Development
 
