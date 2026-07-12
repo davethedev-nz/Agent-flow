@@ -4,9 +4,11 @@ from pathlib import Path
 
 from agentflow.application.agent_execution import AgentExecutionService
 from agentflow.application.configuration_resolution import ConfigurationResolutionService
+from agentflow.application.documentation import DocumentationService
 from agentflow.application.review import ReviewService
 from agentflow.application.state_transitions import TaskTransitionService
 from agentflow.application.task_records import TaskRecordService
+from agentflow.application.tester import TesterService
 from agentflow.application.validation import ValidationService
 from agentflow.domain.enums import AgentRole, TaskState
 from agentflow.infrastructure.repository_discovery import FilesystemRepositoryDiscovery
@@ -19,9 +21,19 @@ class RunFlowService:
         self._agent = AgentExecutionService(discovery)
         self._validation = ValidationService(discovery)
         self._review = ReviewService(discovery)
+        self._documentation = DocumentationService(discovery)
+        self._tester = TesterService(discovery)
         self._config = ConfigurationResolutionService(discovery)
 
-    def run_task(self, path: Path, task_id: str, adapter: str = "fake", command: list[str] | None = None) -> dict[str, object]:
+    def run_task(
+        self,
+        path: Path,
+        task_id: str,
+        adapter: str = "fake",
+        command: list[str] | None = None,
+        with_documentation: bool = False,
+        with_tester: bool = False,
+    ) -> dict[str, object]:
         iteration = 0
         max_iterations = int(self._config.resolve(path, task_id=task_id).settings["autonomy.maximum_repair_iterations"].value)
         while iteration <= max_iterations:
@@ -60,14 +72,32 @@ class RunFlowService:
                 state = self._records.load_state(path, task_id).current_state
 
             if state == TaskState.CODE_REVIEW:
+                if with_tester:
+                    self._tester.run_for_task(
+                        path,
+                        task_id,
+                        adapter=adapter,
+                        command=command,
+                        prompt="Improve test coverage for the implemented behavior.",
+                    )
                 self._review.review_task(path, task_id, adapter=adapter, command=command)
                 state = self._records.load_state(path, task_id).current_state
 
             if state == TaskState.FINAL_REVIEW:
+                if with_documentation:
+                    self._documentation.run_for_task(
+                        path,
+                        task_id,
+                        adapter=adapter,
+                        command=command,
+                    )
+                    state = self._records.load_state(path, task_id).current_state
                 return {
                     "task_id": task_id,
                     "final_state": state.value,
                     "repair_iterations": iteration,
+                    "documentation_pass": with_documentation,
+                    "tester_pass": with_tester,
                     "status": "ready_for_final_approval",
                 }
 

@@ -21,7 +21,7 @@ class TaskTransitionService:
         TaskState.REPAIRING: {TaskState.VALIDATING, TaskState.BLOCKED},
         TaskState.CODE_REVIEW: {TaskState.REPAIRING, TaskState.DOCUMENTING, TaskState.FINAL_REVIEW, TaskState.BLOCKED},
         TaskState.DOCUMENTING: {TaskState.FINAL_REVIEW, TaskState.BLOCKED},
-        TaskState.FINAL_REVIEW: {TaskState.READY_TO_COMMIT, TaskState.BLOCKED},
+        TaskState.FINAL_REVIEW: {TaskState.DOCUMENTING, TaskState.READY_TO_COMMIT, TaskState.BLOCKED},
         TaskState.READY_TO_COMMIT: {TaskState.COMPLETE, TaskState.BLOCKED},
         TaskState.COMPLETE: set(),
         TaskState.BLOCKED: {TaskState.PLANNING, TaskState.IMPLEMENTING, TaskState.CANCELLED},

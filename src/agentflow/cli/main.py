@@ -10,11 +10,13 @@ from rich.table import Table
 from agentflow import __version__
 from agentflow.application.agent_execution import AgentExecutionService
 from agentflow.application.command_runner import RestrictedCommandRunnerService
+from agentflow.application.documentation import DocumentationService
 from agentflow.application.finalization import FinalizationService
 from agentflow.application.path_policy import PathPolicyViolationError
 from agentflow.application.planning import PlanningService
 from agentflow.application.review import ReviewService
 from agentflow.application.run_flow import RunFlowService
+from agentflow.application.tester import TesterService
 from agentflow.application.configuration_resolution import ConfigurationResolutionService
 from agentflow.application.project_init import ProjectInitService
 from agentflow.application.project_inspection import ProjectInspectionService
@@ -89,6 +91,14 @@ def _review_service() -> ReviewService:
 
 def _run_flow_service() -> RunFlowService:
     return RunFlowService(FilesystemRepositoryDiscovery())
+
+
+def _documentation_service() -> DocumentationService:
+    return DocumentationService(FilesystemRepositoryDiscovery())
+
+
+def _tester_service() -> TesterService:
+    return TesterService(FilesystemRepositoryDiscovery())
 
 
 def _finalization_service() -> FinalizationService:
@@ -780,17 +790,90 @@ def run_task(
     path: Path = typer.Argument(Path.cwd(), help="Path to inspect."),
     adapter: str = typer.Option("fake", "--adapter", help="Adapter to use for implementation/review."),
     command: list[str] = typer.Option([], "--command", help="Command tokens for subprocess-text adapter."),
+    with_docs: bool = typer.Option(False, "--with-docs", help="Run an optional documentation pass at final review."),
+    with_tester: bool = typer.Option(False, "--with-tester", help="Run an optional tester-agent pass before review."),
     as_json: bool = typer.Option(False, "--json", help="Emit JSON output."),
 ) -> None:
     """Run bounded implement/validate/review/repair orchestration."""
     try:
-        result = _run_flow_service().run_task(path, task_id, adapter=adapter, command=command or None)
+        result = _run_flow_service().run_task(
+            path,
+            task_id,
+            adapter=adapter,
+            command=command or None,
+            with_documentation=with_docs,
+            with_tester=with_tester,
+        )
         if as_json:
             _print_json(result)
         else:
             _print_json(result)
         if result.get("final_state") == "blocked":
             raise typer.Exit(7)
+    except ValueError as error:
+        payload = {"status": "error", "message": str(error)}
+        if as_json:
+            _print_json(payload)
+        else:
+            console.print(payload)
+        raise typer.Exit(1) from error
+
+
+@app.command("document")
+def document_task(
+    task_id: str,
+    path: Path = typer.Argument(Path.cwd(), help="Path to inspect."),
+    adapter: str = typer.Option("fake", "--adapter", help="Adapter to use for documentation."),
+    command: list[str] = typer.Option([], "--command", help="Command tokens for subprocess-text documenter adapter."),
+    prompt: str | None = typer.Option(None, "--prompt", help="Optional documenter prompt override."),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON output."),
+) -> None:
+    """Run an optional documenter pass limited to documentation paths."""
+    try:
+        result = _documentation_service().run_for_task(path, task_id, adapter=adapter, command=command or None, prompt=prompt)
+        if as_json:
+            _print_json(result.model_dump(mode="json"))
+        else:
+            _print_agent_result(result)
+    except PathPolicyViolationError as error:
+        payload = {"status": "error", "message": str(error), "violations": error.violations}
+        if as_json:
+            _print_json(payload)
+        else:
+            console.print(payload)
+        raise typer.Exit(3) from error
+    except ValueError as error:
+        payload = {"status": "error", "message": str(error)}
+        if as_json:
+            _print_json(payload)
+        else:
+            console.print(payload)
+        raise typer.Exit(1) from error
+
+
+@app.command("test-agent")
+def test_agent_task(
+    task_id: str,
+    path: Path = typer.Argument(Path.cwd(), help="Path to inspect."),
+    adapter: str = typer.Option("fake", "--adapter", help="Adapter to use for tester role."),
+    command: list[str] = typer.Option([], "--command", help="Command tokens for subprocess-text tester adapter."),
+    prompt: str | None = typer.Option(None, "--prompt", help="Optional tester prompt override."),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON output."),
+) -> None:
+    """Run an optional tester-agent pass restricted to test paths."""
+    try:
+        result = _tester_service().run_for_task(path, task_id, adapter=adapter, command=command or None, prompt=prompt)
+        if as_json:
+            _print_json(result.model_dump(mode="json"))
+        else:
+            _print_agent_result(result)
+    except PathPolicyViolationError as error:
+        payload = {"status": "error", "message": str(error), "violations": error.violations}
+        if as_json:
+            _print_json(payload)
+        else:
+            console.print(payload)
+        raise typer.Exit(3) from error
     except ValueError as error:
         payload = {"status": "error", "message": str(error)}
         if as_json:

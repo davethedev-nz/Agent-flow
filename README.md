@@ -70,8 +70,10 @@ Slices 1 through 15 are implemented on this feature branch, including:
 - bounded repair loop orchestration
 - final approval with local completion commit
 - optional VS Code task examples during init
+- optional documentation pass constrained to documentation paths
+- optional tester-agent workflow constrained to test paths
 
-Remaining roadmap work starts at slice 17.
+Roadmap slices 1 through 18 are implemented on this branch.
 
 ## Development
 

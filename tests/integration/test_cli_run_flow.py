@@ -62,3 +62,25 @@ def test_run_blocks_when_repair_iterations_are_exhausted(tmp_path: Path) -> None
 
     assert result.exit_code == 7
     assert '"final_state": "blocked"' in result.stdout
+
+
+def test_run_can_include_optional_tester_and_documentation_passes(tmp_path: Path) -> None:
+    repository_root = tmp_path / "repo"
+    _create_implementing_task(repository_root)
+    (repository_root / "docs").mkdir()
+    (repository_root / ".agentflow" / "validation.yaml").write_text(
+        "schema_version: 1\nvalidators:\n  - validator_id: git_status\n    description: git status\n    command: [git, status, --short]\n    timeout_seconds: 30\n",
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(
+        app,
+        ["run", "TASK-001", str(repository_root), "--with-tester", "--with-docs", "--json"],
+    )
+
+    assert result.exit_code == 0
+    assert '"final_state": "final_review"' in result.stdout
+    assert '"tester_pass": true' in result.stdout
+    assert '"documentation_pass": true' in result.stdout
+    assert (repository_root / ".agentflow" / "tasks" / "TASK-001" / "tester-result.json").exists()
+    assert (repository_root / ".agentflow" / "tasks" / "TASK-001" / "documentation-result.json").exists()
