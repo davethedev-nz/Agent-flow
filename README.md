@@ -6,11 +6,12 @@ The product goal is simple:
 
 > AgentFlow owns the workflow. Agents perform bounded jobs. Git owns the evidence. The developer approves important transitions.
 
-This repository contains architecture and product docs plus a working Python implementation of the core orchestration loop through slice 15.
+This repository contains architecture and product docs plus a working Python implementation of the core orchestration loop through slice 18.
 
 ## What is in this repository
 
 - Architecture and product documentation in `docs/`
+- End-user guide in `docs/user-guide.md`
 - Architecture decision records in `docs/decisions/`
 - A minimal Python package scaffold in `src/agentflow/`
 - Test layout and fixtures for incremental implementation
