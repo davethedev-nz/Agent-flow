@@ -83,6 +83,39 @@ def test_agent_run_subprocess_text_adapter_returns_stdout(tmp_path: Path) -> Non
     assert '"stdout": "echo this prompt"' in result.stdout
 
 
+def test_agent_run_copilot_cli_adapter_supports_prompt_flag(tmp_path: Path) -> None:
+    repository_root = tmp_path / "repo"
+    _create_initialized_task(repository_root)
+
+    result = runner.invoke(
+        app,
+        [
+            "agent-run",
+            "TASK-001",
+            str(repository_root),
+            "--role",
+            "implementer",
+            "--adapter",
+            "copilot-cli",
+            "--command",
+            sys.executable,
+            "--command",
+            "-c",
+            "--command",
+            "import sys; print(f'{sys.argv[1]}|{sys.argv[2]}')",
+            "--command",
+            "--prompt",
+            "--prompt",
+            "copilot style prompt",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert '"provider": "copilot-cli"' in result.stdout
+    assert '"stdout": "--prompt|copilot style prompt"' in result.stdout
+
+
 def test_agent_run_blocks_out_of_scope_changes(tmp_path: Path) -> None:
     repository_root = tmp_path / "repo"
     _create_committed_repo(repository_root)

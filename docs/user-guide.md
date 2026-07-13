@@ -65,6 +65,14 @@ Add optional VS Code tasks:
 agentflow init /path/to/repo --write --vscode-tasks
 ```
 
+Then verify Copilot CLI connectivity:
+
+```bash
+agentflow doctor-copilot --prompt "Reply with exactly: OK"
+```
+
+`doctor-copilot` uses `claude-haiku-4.5` by default to keep credit usage low. Override with `--model` when needed.
+
 Generated core files include:
 
 - .agentflow/config.yaml
@@ -80,10 +88,13 @@ Generated core files include:
 ```bash
 agentflow version
 agentflow doctor [PATH] [--json]
+agentflow doctor-copilot [--prompt "..."] [--model MODEL] [--timeout 60] [--json]
 agentflow project inspect [PATH] [--json]
 agentflow config show [PATH] [--json]
 agentflow config show [PATH] --resolved [--task-id TASK-001] [--json]
 ```
+
+After `agentflow init`, run `agentflow doctor-copilot` to verify that the Copilot CLI is installed and can answer a prompt.
 
 ### 5.2 Task Records and State
 
@@ -98,7 +109,7 @@ agentflow events TASK-001 [PATH] [--json]
 ### 5.3 Planning and State Transitions
 
 ```bash
-agentflow plan TASK-001 [PATH] [--adapter fake|subprocess-text] [--command ...] [--json]
+agentflow plan TASK-001 [PATH] [--adapter fake|subprocess-text|copilot-cli] [--command ...] [--json]
 agentflow approve-plan TASK-001 [PATH] [--reason "..."] [--json]
 agentflow reject-plan TASK-001 [PATH] [--reason "..."] [--json]
 agentflow block TASK-001 [PATH] [--reason "..."] [--json]
@@ -113,6 +124,20 @@ agentflow command-run TASK-001 [PATH] --command <token> --command <token> ... [-
 agentflow approve-command TASK-001 [PATH] [--json]
 agentflow reject-command TASK-001 [PATH] [--json]
 ```
+
+For GitHub Copilot CLI, install it first and then use the dedicated adapter name:
+
+```bash
+npm install -g @github/copilot
+brew install --cask copilot-cli
+curl -fsSL https://gh.io/copilot-install | bash
+
+agentflow agent-run TASK-001 --role implementer --adapter copilot-cli --command copilot --command --prompt --prompt "Refactor this module" --json
+```
+
+The first `--prompt` above is the Copilot CLI flag. The second `--prompt` is the AgentFlow prompt passed to the adapter.
+
+When `--adapter copilot-cli` is used and no model flag is present in command tokens, AgentFlow injects `--model claude-haiku-4.5` by default.
 
 ### 5.5 Validation, Review, and Run Loop
 
