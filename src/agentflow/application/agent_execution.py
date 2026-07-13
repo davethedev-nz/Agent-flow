@@ -5,6 +5,7 @@ import uuid
 from pathlib import Path
 
 from agentflow.adapters.fake import FakeAgentAdapter
+from agentflow.adapters.copilot_cli import CopilotCLIAdapter
 from agentflow.adapters.subprocess_text import SubprocessTextAgentAdapter
 from agentflow.application.path_policy import PathPolicyViolationError, RepositoryPathPolicy
 from agentflow.application.state_transitions import TaskTransitionService
@@ -114,6 +115,8 @@ class AgentExecutionService:
     def _adapter(self, adapter_name: str, command: list[str] | None) -> FakeAgentAdapter | SubprocessTextAgentAdapter:
         if adapter_name == "fake":
             return FakeAgentAdapter()
+        if adapter_name == "copilot-cli":
+            return CopilotCLIAdapter(command or [])
         if adapter_name == "subprocess-text":
             return SubprocessTextAgentAdapter(command or [])
         raise ValueError(f"Unsupported adapter {adapter_name}.")

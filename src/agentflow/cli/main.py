@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
 from pathlib import Path
 
 import typer
@@ -8,6 +10,7 @@ from rich.console import Console
 from rich.table import Table
 
 from agentflow import __version__
+from agentflow.adapters.copilot_cli import DEFAULT_COPILOT_CLI_MODEL
 from agentflow.application.agent_execution import AgentExecutionService
 from agentflow.application.command_runner import RestrictedCommandRunnerService
 from agentflow.application.documentation import DocumentationService
@@ -130,6 +133,20 @@ def _print_doctor_report(report: DoctorReport) -> None:
     for check in report.checks:
         table.add_row(check.name, check.status, check.details)
 
+    console.print(table)
+
+
+def _print_copilot_connectivity_result(result: dict[str, object]) -> None:
+    table = Table(title="AgentFlow doctor copilot")
+    table.add_column("Field")
+    table.add_column("Value")
+    table.add_row("Executable", str(result.get("executable") or "missing"))
+    table.add_row("Model", str(result.get("model") or ""))
+    table.add_row("Prompt", str(result.get("prompt") or ""))
+    table.add_row("Exit code", str(result.get("exit_code") or ""))
+    table.add_row("Status", str(result.get("status") or ""))
+    table.add_row("Stdout", str(result.get("stdout") or ""))
+    table.add_row("Stderr", str(result.get("stderr") or ""))
     console.print(table)
 
 
@@ -319,6 +336,49 @@ def doctor(
         return
 
     _print_doctor_report(report)
+
+
+@app.command("doctor-copilot")
+def doctor_copilot(
+    prompt: str = typer.Option("Reply with exactly: OK", "--prompt", help="Prompt to send to GitHub Copilot CLI."),
+    model: str = typer.Option(DEFAULT_COPILOT_CLI_MODEL, "--model", help="Model used for the Copilot CLI prompt."),
+    timeout_seconds: int = typer.Option(60, "--timeout", min=1, help="Seconds to wait for the CLI response."),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON output."),
+) -> None:
+    """Verify that GitHub Copilot CLI can answer a prompt."""
+    executable = shutil.which("copilot")
+    if executable is None:
+        payload = {"status": "error", "message": "copilot CLI is not installed or not on PATH."}
+        if as_json:
+            _print_json(payload)
+        else:
+            console.print(payload)
+        raise typer.Exit(1)
+
+    completed = subprocess.run(
+        [executable, "--model", model, "--prompt", prompt],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=timeout_seconds,
+    )
+    payload: dict[str, object] = {
+        "status": "ok" if completed.returncode == 0 else "error",
+        "executable": executable,
+        "model": model,
+        "prompt": prompt,
+        "exit_code": completed.returncode,
+        "stdout": completed.stdout.strip(),
+        "stderr": completed.stderr.strip(),
+    }
+
+    if as_json:
+        _print_json(payload)
+    else:
+        _print_copilot_connectivity_result(payload)
+
+    if completed.returncode != 0:
+        raise typer.Exit(1)
 
 
 @app.command("init")
@@ -566,7 +626,7 @@ def plan_task(
     task_id: str,
     path: Path = typer.Argument(Path.cwd(), help="Path to inspect."),
     adapter: str = typer.Option("fake", "--adapter", help="Adapter to use for planning."),
-    command: list[str] = typer.Option([], "--command", help="Command tokens for subprocess-text planner adapter."),
+    command: list[str] = typer.Option([], "--command", help="Command tokens for subprocess-text or copilot-cli planner adapter, such as copilot --prompt."),
     as_json: bool = typer.Option(False, "--json", help="Emit JSON output."),
 ) -> None:
     """Generate a plan and move the task into plan review."""
@@ -636,8 +696,8 @@ def agent_run(
     task_id: str,
     role: AgentRole = typer.Option(..., "--role", help="Agent role to execute."),
     prompt: str = typer.Option(..., "--prompt", help="Prompt body to send to the adapter."),
-    adapter: str = typer.Option("fake", "--adapter", help="Adapter to use: fake or subprocess-text."),
-    command: list[str] = typer.Option([], "--command", help="Command tokens for subprocess-text adapter."),
+    adapter: str = typer.Option("fake", "--adapter", help="Adapter to use: fake, subprocess-text, or copilot-cli."),
+    command: list[str] = typer.Option([], "--command", help="Command tokens for subprocess-text or copilot-cli adapter, such as copilot --prompt."),
     path: Path = typer.Argument(Path.cwd(), help="Path to inspect."),
     as_json: bool = typer.Option(False, "--json", help="Emit JSON output."),
 ) -> None:
@@ -763,7 +823,7 @@ def review_task(
     task_id: str,
     path: Path = typer.Argument(Path.cwd(), help="Path to inspect."),
     adapter: str = typer.Option("fake", "--adapter", help="Adapter to use for reviewing."),
-    command: list[str] = typer.Option([], "--command", help="Command tokens for subprocess-text reviewer adapter."),
+    command: list[str] = typer.Option([], "--command", help="Command tokens for subprocess-text or copilot-cli reviewer adapter, such as copilot --prompt."),
     as_json: bool = typer.Option(False, "--json", help="Emit JSON output."),
 ) -> None:
     """Run reviewer analysis and persist findings with a verdict."""
@@ -789,7 +849,7 @@ def run_task(
     task_id: str,
     path: Path = typer.Argument(Path.cwd(), help="Path to inspect."),
     adapter: str = typer.Option("fake", "--adapter", help="Adapter to use for implementation/review."),
-    command: list[str] = typer.Option([], "--command", help="Command tokens for subprocess-text adapter."),
+    command: list[str] = typer.Option([], "--command", help="Command tokens for subprocess-text or copilot-cli adapter, such as copilot --prompt."),
     with_docs: bool = typer.Option(False, "--with-docs", help="Run an optional documentation pass at final review."),
     with_tester: bool = typer.Option(False, "--with-tester", help="Run an optional tester-agent pass before review."),
     as_json: bool = typer.Option(False, "--json", help="Emit JSON output."),
@@ -824,7 +884,7 @@ def document_task(
     task_id: str,
     path: Path = typer.Argument(Path.cwd(), help="Path to inspect."),
     adapter: str = typer.Option("fake", "--adapter", help="Adapter to use for documentation."),
-    command: list[str] = typer.Option([], "--command", help="Command tokens for subprocess-text documenter adapter."),
+    command: list[str] = typer.Option([], "--command", help="Command tokens for subprocess-text or copilot-cli documenter adapter, such as copilot --prompt."),
     prompt: str | None = typer.Option(None, "--prompt", help="Optional documenter prompt override."),
     as_json: bool = typer.Option(False, "--json", help="Emit JSON output."),
 ) -> None:
@@ -856,7 +916,7 @@ def test_agent_task(
     task_id: str,
     path: Path = typer.Argument(Path.cwd(), help="Path to inspect."),
     adapter: str = typer.Option("fake", "--adapter", help="Adapter to use for tester role."),
-    command: list[str] = typer.Option([], "--command", help="Command tokens for subprocess-text tester adapter."),
+    command: list[str] = typer.Option([], "--command", help="Command tokens for subprocess-text or copilot-cli tester adapter, such as copilot --prompt."),
     prompt: str | None = typer.Option(None, "--prompt", help="Optional tester prompt override."),
     as_json: bool = typer.Option(False, "--json", help="Emit JSON output."),
 ) -> None:

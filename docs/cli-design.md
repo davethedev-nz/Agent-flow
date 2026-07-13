@@ -12,6 +12,7 @@
 ```bash
 agentflow init
 agentflow doctor
+agentflow doctor-copilot
 agentflow project inspect
 agentflow config show
 agentflow config show --resolved
@@ -62,6 +63,9 @@ Proposed source paths: src/, tests/
 Proposed validation commands: ruff check ., mypy src, pytest
 Write .agentflow files? [y/N]: y
 Initialized AgentFlow project config.
+
+$ agentflow doctor-copilot
+Copilot CLI responded successfully.
 ```
 
 ## Example session: successful task completion
